@@ -358,7 +358,7 @@
                 <p style="font-size:13px;color:var(--text-tertiary);margin-bottom:1rem">Use a cloud AI vision model (Gemini, Claude, or OpenRouter) for more accurate wallpaper titles, alt text, and tags. Cloud models excel at character recognition, franchise identification, and scene description. When enabled, the cloud model replaces local BLIP captioning. Falls back to BLIP automatically if the API call fails. OpenRouter provides access to many vision models — image-processing optimized models are highlighted.</p>
 
                 <div class="settings-option" style="margin-bottom:1rem">
-                    <input type="checkbox" id="set-cloud-enabled" style="margin-top:3px" onchange="toggleCloudAIFields()">
+                    <input type="checkbox" id="set-cloud-enabled" style="margin-top:3px" onchange="toggleCloudAIFields(); autoSaveCloudAI()">
                     <div class="settings-option-text">
                         <h4>Enable Cloud AI Captioning</h4>
                         <p>Use Gemini, Claude, or OpenRouter vision models instead of local BLIP for wallpaper titling, alt text, and tagging</p>
@@ -369,7 +369,7 @@
                     <div class="settings-grid-2">
                         <div class="form-group">
                             <label>Provider</label>
-                            <select id="set-cloud-provider" onchange="updateCloudModelOptions()">
+                            <select id="set-cloud-provider" onchange="updateCloudModelOptions(); autoSaveCloudAI()">
                                 <option value="">Select...</option>
                                 <option value="gemini">Gemini (Google)</option>
                                 <option value="claude">Claude (Anthropic)</option>
@@ -379,7 +379,7 @@
                         </div>
                         <div class="form-group">
                             <label>Model</label>
-                            <select id="set-cloud-model">
+                            <select id="set-cloud-model" onchange="autoSaveCloudAI()">
                                 <option value="">Default</option>
                             </select>
                             <p style="font-size:12px;color:var(--text-muted);margin-top:0.3rem" id="cloud-model-hint">Leave as Default for the recommended model</p>
@@ -388,7 +388,7 @@
                     <div class="form-group" style="margin-bottom:1rem">
                         <label>API Key</label>
                         <div style="display:flex;gap:0.5rem;align-items:flex-start">
-                            <input type="password" id="set-cloud-api-key" placeholder="Paste your API key" style="flex:1">
+                            <input type="password" id="set-cloud-api-key" placeholder="Paste your API key" style="flex:1" onchange="autoSaveCloudAI()">
                             <button class="btn btn-secondary btn-sm" onclick="toggleApiKeyVisibility()" id="toggle-key-btn" style="white-space:nowrap">Show</button>
                         </div>
                         <p style="font-size:12px;color:var(--text-muted);margin-top:0.3rem" id="cloud-key-hint">Your API key is stored locally and never shared</p>
@@ -840,6 +840,6 @@
         </div>
     </div>
 
-    <script src="/static/js/app.js?v=9"></script>
+    <script src="/static/js/app.js?v=10"></script>
 </body>
 </html>

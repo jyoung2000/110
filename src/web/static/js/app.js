@@ -889,6 +889,29 @@ function toggleCloudAIFields() {
     document.getElementById('cloud-ai-fields').style.display = enabled ? '' : 'none';
 }
 
+// Auto-save cloud AI settings whenever the user changes provider, model, or enabled toggle.
+// Debounced so rapid changes (typing API key) only trigger one save.
+let _cloudAISaveTimer = null;
+function autoSaveCloudAI() {
+    clearTimeout(_cloudAISaveTimer);
+    _cloudAISaveTimer = setTimeout(async () => {
+        try {
+            await saveCloudAIConfig();
+            const provider = document.getElementById('set-cloud-provider').value;
+            const model = document.getElementById('set-cloud-model').value;
+            const enabled = document.getElementById('set-cloud-enabled').checked;
+            if (enabled && provider) {
+                const label = model || 'default model';
+                toast(`Cloud AI saved: ${provider} / ${label}`, 'success');
+            } else if (!enabled) {
+                toast('Cloud AI disabled — using local BLIP', 'info');
+            }
+        } catch (e) {
+            toast('Failed to save AI settings', 'error');
+        }
+    }, 300);
+}
+
 async function updateCloudModelOptions() {
     const provider = document.getElementById('set-cloud-provider').value;
     const modelSelect = document.getElementById('set-cloud-model');
