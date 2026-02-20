@@ -977,12 +977,33 @@ async def reject_character(entry_id: str):
 
 @router.get("/settings")
 async def get_settings():
+    from src.ai.provider import DEFAULT_SYSTEM_PROMPT
+    from src.ai.captioner import (
+        DEFAULT_STRIP_WORDS, DEFAULT_ROBOTIC_ADJECTIVES,
+        DEFAULT_JUNK_TAGS, DEFAULT_GENERIC_PREFIXES,
+    )
+
+    ai_cfg = dict(config_store.get_section("ai"))
+
+    # Populate empty prompt/filter fields with built-in defaults so
+    # the UI always shows the effective values and users can edit them.
+    _defaults = {
+        "cloud_system_prompt": DEFAULT_SYSTEM_PROMPT,
+        "strip_words": "\n".join(DEFAULT_STRIP_WORDS),
+        "robotic_adjectives": "\n".join(DEFAULT_ROBOTIC_ADJECTIVES),
+        "junk_tags": "\n".join(DEFAULT_JUNK_TAGS),
+        "generic_prefixes": "\n".join(p.rstrip() for p in DEFAULT_GENERIC_PREFIXES),
+    }
+    for key, default_val in _defaults.items():
+        if not ai_cfg.get(key, "").strip():
+            ai_cfg[key] = default_val
+
     return {
         "scraping": config_store.get_section("scraping"),
         "jpeg": config_store.get_section("jpeg"),
         "scheduler": config_store.get_section("scheduler"),
         "gallery": config_store.get_section("gallery"),
-        "ai": config_store.get_section("ai"),
+        "ai": ai_cfg,
     }
 
 

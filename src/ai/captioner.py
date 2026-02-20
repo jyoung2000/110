@@ -745,6 +745,10 @@ class AICaptioner:
                     scraped_tags=scraped_tags,
                 )
                 if cloud_title:
+                    # Apply the same word filters used by the local pipeline
+                    cloud_title, cloud_alt, cloud_tags = self._filter_cloud_result(
+                        cloud_title, cloud_alt, cloud_tags,
+                    )
                     logger.info(
                         f"Cloud AI ({cloud_cfg['cloud_provider']}) captioned: "
                         f"{cloud_title[:50]}"
@@ -1277,6 +1281,43 @@ class AICaptioner:
     # ------------------------------------------------------------------
     # Text cleaning helpers
     # ------------------------------------------------------------------
+
+    def _filter_cloud_result(
+        self, title: str, alt: str, tags: str,
+    ) -> Tuple[str, str, str]:
+        """Apply word-filter settings to cloud AI output.
+
+        The system prompt already instructs the model to avoid forbidden words,
+        but models don't always obey — this enforces the same strip-words,
+        robotic-adjective, junk-tag, and generic-prefix filters that the
+        local BLIP pipeline uses.
+        """
+        # --- title ---
+        title = self._strip_prefixes(title)
+        title = _ROBOTIC_ADJ_RE.sub(" ", title)
+        title = STRIP_WORDS.sub(" ", title)
+        title = re.sub(r"\s+", " ", title).strip()
+        # Restore Title Case after stripping
+        if title:
+            title = title[0].upper() + title[1:]
+
+        # --- alt ---
+        alt = self._strip_prefixes(alt)
+        alt = _ROBOTIC_ADJ_RE.sub(" ", alt)
+        alt = STRIP_WORDS.sub(" ", alt)
+        alt = re.sub(r"\s+", " ", alt).strip()
+
+        # --- tags ---
+        junk = _get_junk_tags()
+        tag_list = [t.strip().lower() for t in tags.split(",") if t.strip()]
+        cleaned_tags = []
+        for t in tag_list:
+            t = STRIP_WORDS.sub("", t).strip()
+            if t and t not in junk and len(t) > 1:
+                cleaned_tags.append(t)
+        tags = ", ".join(cleaned_tags)
+
+        return title, alt, tags
 
     def _clean_metadata_text(self, text: str) -> str:
         """Clean scraped title/alt/tag text — strip junk, site names, dimensions."""
