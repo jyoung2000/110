@@ -73,6 +73,15 @@ EXCLUDE_PATTERNS = [
     r"amazon\.com/images", r"ebay\.com", r"shopify\.com",
     r"doubleclick\.net", r"googlesyndication", r"adnxs\.com",
     r"adsrvr\.org", r"adservice", r"pagead",
+    # Additional ad networks & trackers commonly found on wallpaper sites
+    r"outbrain\.com", r"taboola\.com", r"mgid\.com", r"revcontent\.com",
+    r"criteo\.", r"pubmatic\.com", r"rubiconproject\.com", r"openx\.net",
+    r"bidswitch\.net", r"casalemedia\.com", r"3lift\.com", r"sharethrough\.com",
+    r"moatads\.com", r"adform\.net", r"quantserve\.com", r"scorecardresearch",
+    r"popads\.net", r"propellerads", r"exoclick\.com", r"juicyads\.com",
+    r"trafficjunky", r"adsterra", r"hilltopads",
+    r"cdn\.ampproject\.org", r"syndication\.twitter",
+    r"/ads/", r"/advert", r"/sponsor",
 ]
 
 # URL patterns for navigation/non-detail pages to skip in detail page detection
@@ -87,6 +96,17 @@ NAV_EXCLUDE_PATTERNS = [
     r"^/user/", r"^/u/",  # Other user page patterns
     r"^/author/", r"^/photographer/", r"^/contributor/",
     r"/collections?/?$",   # Collection listing pages
+    # Category/listing pages with "-desktop-" prefix (WallpapersWide, etc.)
+    r"-desktop-wallpapers", r"-desktop-backgrounds",
+    # Resolution listing pages (e.g., /3840x2160-wallpapers-r.html)
+    r"^\d+x\d+-wallpapers",
+    # Top/new/popular listing pages (common on wallpaper sites)
+    r"/top_wallpapers", r"/new_wallpapers", r"/popular_wallpapers",
+    r"/hot_wallpapers", r"/best_wallpapers", r"/random_wallpapers",
+    # Common page-level listing patterns
+    r"/page/\d+", r"[?&]page=\d+",
+    # Wallpaper site-specific listing pages
+    r"/wallpaper\.html$",   # e.g., wallpaperswide.com/wallpaper.html (landing page)
 ]
 
 # Image extensions
@@ -731,7 +751,15 @@ class GenericAdapter(BaseAdapter):
                 "thumbnail_url": urljoin(page_url, thumb_src) if thumb_src else "",
                 "alt": alt,
                 "title": title,
+                "_has_thumb": has_img,  # used for sorting priority
             })
+
+        # Prioritize links with actual thumbnails (real wallpaper entries) over
+        # links matched only by URL pattern (may be category/navigation links).
+        links.sort(key=lambda l: (not l.get("_has_thumb", False),))
+        # Strip internal sorting key
+        for l in links:
+            l.pop("_has_thumb", None)
 
         logger.info(f"Found {len(links)} detail page links on {page_url}")
         return links
@@ -742,7 +770,23 @@ class GenericAdapter(BaseAdapter):
 
         Matches patterns like: /w/abc123, /wallpaper-name-123,
         /photo/123, /image/123, /long-descriptive-slug.html, etc.
+
+        Rejects known listing/category page patterns.
         """
+        path_lower = path.lower()
+
+        # Reject known listing/category patterns before checking detail patterns
+        listing_patterns = [
+            r"-desktop-wallpapers", r"-desktop-backgrounds",
+            r"^\d+x\d+-wallpapers",           # Resolution listings
+            r"/top_wallpapers", r"/new_wallpapers", r"/popular_wallpapers",
+            r"/hot_wallpapers", r"/best_wallpapers", r"/random_wallpapers",
+            r"/page/\d+", r"[?&]page=\d+",
+            r"/wallpaper\.html$",              # Landing pages
+        ]
+        if any(re.search(p, path_lower) for p in listing_patterns):
+            return False
+
         detail_patterns = [
             r"^/w/[a-z0-9]+$",                  # Wallhaven: /w/abc123
             r"wallpaper[s]?[/-]",                 # Generic: /wallpaper/..., /wallpapers/..., -wallpapers.html
@@ -761,7 +805,7 @@ class GenericAdapter(BaseAdapter):
             # Single deep path (not nested like /category/subcategory/page)
             r"^/[^/]+\.html$",
         ]
-        return any(re.search(p, path, re.I) for p in detail_patterns)
+        return any(re.search(p, path_lower) for p in detail_patterns)
 
     @staticmethod
     def _root_domain(netloc: str) -> str:
