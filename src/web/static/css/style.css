@@ -216,6 +216,37 @@ body::before {
     flex-shrink: 0;
 }
 
+/* Nav AI badge — shows active AI provider in the nav bar */
+.nav-ai-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 3px 10px;
+    border-radius: var(--radius-full);
+    font-size: 11px;
+    font-weight: 500;
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    white-space: nowrap;
+    margin-left: auto;
+}
+.nav-ai-badge:hover { opacity: 0.8; }
+.nav-ai-icon { font-size: 13px; line-height: 1; }
+.nav-ai-label { line-height: 1; }
+.nav-ai-cloud {
+    background: rgba(48, 209, 88, 0.12);
+    color: var(--success);
+}
+.nav-ai-local {
+    background: rgba(10, 132, 255, 0.12);
+    color: var(--accent);
+}
+.nav-ai-none {
+    background: rgba(255, 159, 10, 0.12);
+    color: var(--warning);
+}
+
 /* Image loading states for browse gallery */
 .browse-item-loading {
     position: relative;
@@ -1627,6 +1658,11 @@ tr.drag-over td {
         font-size: 11px;
         min-height: 32px;
     }
+    .nav-ai-badge {
+        font-size: 10px;
+        padding: 2px 7px;
+    }
+    .nav-ai-label { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 
     /* --- Sources page banners: prevent overflow --- */
     .scheduler-banner,
@@ -1994,6 +2030,7 @@ tr.drag-over td {
     .stat-grid { grid-template-columns: 1fr; }
     .browse-item { height: 180px; }
     .nav-brand { font-size: 13px !important; }
+    .nav-ai-badge .nav-ai-label { display: none; }
     .char-stat { font-size: 10px; padding: 2px 6px; }
     .btn-sm, .btn-xs { font-size: 10px; padding: 0.2rem 0.45rem; }
 }

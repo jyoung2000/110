@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Wallpaper Scraper</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-    <link rel="stylesheet" href="/static/css/style.css?v=10">
+    <link rel="stylesheet" href="/static/css/style.css?v=11">
     <!-- iOS web app support -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -26,6 +26,7 @@
             <div class="nav-tab" data-tab="stats">Stats</div>
             <div class="nav-tab" data-tab="logs">Logs</div>
         </div>
+        <div class="nav-ai-badge" id="nav-ai-badge" title="AI model used for image analysis" onclick="switchTab('settings')"></div>
         <div class="nav-status" id="nav-status"></div>
         <button class="btn btn-danger btn-sm nav-stop-btn" id="nav-stop-btn" onclick="stopAll()" style="display:none" title="Stop current job and pause engine">Stop All</button>
         <button class="btn btn-success btn-sm nav-stop-btn" id="nav-resume-btn" onclick="resumeEngine()" style="display:none" title="Resume engine">Resume</button>
@@ -840,6 +841,6 @@
         </div>
     </div>
 
-    <script src="/static/js/app.js?v=10"></script>
+    <script src="/static/js/app.js?v=11"></script>
 </body>
 </html>

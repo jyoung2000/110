@@ -417,6 +417,49 @@ async def live_status():
             "next_scrape": next_scrape,
         })
 
+    # AI captioning status — which provider/model the scraper will use
+    ai_cfg = config_store.get_section("ai")
+    cloud_enabled = (
+        ai_cfg.get("cloud_enabled")
+        and ai_cfg.get("cloud_provider")
+        and ai_cfg.get("cloud_api_key")
+    )
+    if cloud_enabled:
+        provider = ai_cfg.get("cloud_provider", "")
+        model = ai_cfg.get("cloud_model", "")
+        # Derive a short display label for the model
+        if model:
+            # e.g. "google/gemini-2.0-flash-exp:free" → "gemini-2.0-flash-exp:free"
+            model_short = model.split("/")[-1] if "/" in model else model
+        else:
+            # Show the default for each provider
+            defaults = {
+                "gemini": "gemini-2.0-flash",
+                "claude": "claude-haiku-4.5",
+                "openrouter": "auto-select",
+            }
+            model_short = defaults.get(provider, "default")
+        ai_status = {
+            "type": "cloud",
+            "provider": provider,
+            "model": model_short,
+            "label": f"{provider} / {model_short}",
+        }
+    elif scraper_engine.captioner.is_available:
+        ai_status = {
+            "type": "local",
+            "provider": "blip",
+            "model": "BLIP + CLIP",
+            "label": "Local BLIP + CLIP",
+        }
+    else:
+        ai_status = {
+            "type": "none",
+            "provider": "",
+            "model": "",
+            "label": "No AI loaded",
+        }
+
     return {
         "current_job": current_job,
         "engine_paused": scraper_engine.is_paused,
@@ -427,6 +470,7 @@ async def live_status():
         "browser_available": browser_manager.is_available,
         "scheduler": scheduler.status,
         "sources_status": sources_status,
+        "ai_status": ai_status,
     }
 
 

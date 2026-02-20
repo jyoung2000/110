@@ -63,6 +63,21 @@ function renderNavStatus(data) {
     const el = document.getElementById('nav-status');
     if (!el) return;
 
+    // AI badge — shows which AI the scraper is currently using
+    const aiBadge = document.getElementById('nav-ai-badge');
+    if (aiBadge && data.ai_status) {
+        const ai = data.ai_status;
+        const icon = ai.type === 'cloud' ? '&#9729;' : ai.type === 'local' ? '&#9881;' : '&#9888;';
+        const cls = ai.type === 'cloud' ? 'nav-ai-cloud' : ai.type === 'local' ? 'nav-ai-local' : 'nav-ai-none';
+        aiBadge.className = 'nav-ai-badge ' + cls;
+        aiBadge.innerHTML = `<span class="nav-ai-icon">${icon}</span><span class="nav-ai-label">${esc(ai.label)}</span>`;
+        aiBadge.title = ai.type === 'cloud'
+            ? `Cloud AI: ${ai.provider} / ${ai.model} — click to change`
+            : ai.type === 'local'
+            ? 'Local AI: BLIP + CLIP — click to switch to cloud'
+            : 'No AI loaded — click to configure';
+    }
+
     const job = data.current_job;
     const discoveryRunning = data.discovery_running;
     const scheduler = data.scheduler || {};
