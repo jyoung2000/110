@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Wallpaper Scraper</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="/static/css/style.css?v=9">
+    <!-- iOS web app support -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-brand">Wallpaper Scraper</div>
+        <div class="nav-tabs">
+            <div class="nav-tab active" data-tab="gallery">Gallery</div>
+            <div class="nav-tab" data-tab="scrape">Scrape</div>
+            <div class="nav-tab" data-tab="sources">Sources</div>
+            <div class="nav-tab" data-tab="jobs">Jobs</div>
+            <div class="nav-tab" data-tab="characters">Characters</div>
+            <div class="nav-tab" data-tab="settings">Settings</div>
+            <div class="nav-tab" data-tab="baserow">Baserow</div>
+            <div class="nav-tab" data-tab="browse">Browse</div>
+            <div class="nav-tab" data-tab="stats">Stats</div>
+            <div class="nav-tab" data-tab="logs">Logs</div>
+        </div>
+        <div class="nav-status" id="nav-status"></div>
+        <button class="btn btn-danger btn-sm nav-stop-btn" id="nav-stop-btn" onclick="stopAll()" style="display:none" title="Stop current job and pause engine">Stop All</button>
+        <button class="btn btn-success btn-sm nav-stop-btn" id="nav-resume-btn" onclick="resumeEngine()" style="display:none" title="Resume engine">Resume</button>
+    </nav>
+
+    <div class="main">
+
+        <!-- ==================== Gallery ==================== -->
+        <div id="tab-gallery" class="tab-content active">
+            <div id="gallery-live-banner" class="scraping-banner" style="display:none">
+                <div class="scraping-banner-content">
+                    <span class="spinner"></span>
+                    <div>
+                        <div class="scraping-banner-title" id="gallery-live-title">Scraping in progress...</div>
+                        <div class="scraping-banner-detail" id="gallery-live-detail"></div>
+                    </div>
+                </div>
+                <div class="scraping-banner-progress">
+                    <div class="progress scraping-progress-bar">
+                        <div class="progress-bar" id="gallery-live-progress"></div>
+                    </div>
+                    <span class="scraping-banner-stats" id="gallery-live-stats"></span>
+                    <button class="btn btn-danger btn-sm" onclick="stopAll()">Stop</button>
+                </div>
+            </div>
+            <div id="engine-paused-banner" class="paused-banner" style="display:none">
+                <div class="paused-banner-content">
+                    <span class="paused-banner-icon">&#9209;</span>
+                    <div>
+                        <div class="paused-banner-title">Scraper Paused</div>
+                        <div class="paused-banner-detail">All scraping is stopped. No new jobs will run until you resume.</div>
+                    </div>
+                </div>
+                <button class="btn btn-success btn-sm" onclick="resumeEngine()">Resume</button>
+            </div>
+            <div class="stat-grid" id="gallery-stats"></div>
+            <div class="gallery-controls">
+                <input type="text" id="gallery-search" class="gallery-control-input" placeholder="Search title or tags...">
+                <select id="gallery-source-filter" class="gallery-control-select">
+                    <option value="">All Sources</option>
+                </select>
+                <select id="gallery-status-filter" class="gallery-control-select-sm">
+                    <option value="">All Status</option>
+                    <option value="uploaded">Uploaded</option>
+                    <option value="upgraded">Upgraded</option>
+                    <option value="duplicate">Duplicate</option>
+                    <option value="error">Error</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="loadGallery()">Refresh</button>
+            </div>
+            <div class="gallery-layout">
+                <div class="card">
+                    <div class="card-title">Recent Activity</div>
+                    <div class="activity-feed" id="activity-feed"></div>
+                </div>
+                <div>
+                    <div class="gallery-grid" id="gallery-grid"></div>
+                    <div style="text-align:center;margin-top:1.5rem">
+                        <button class="btn btn-secondary" id="load-more-btn" onclick="loadMoreGallery()" style="display:none">Load More</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== Scrape ==================== -->
+        <div id="tab-scrape" class="tab-content">
+            <div id="scrape-paused-banner" class="paused-banner" style="display:none">
+                <div class="paused-banner-content">
+                    <span class="paused-banner-icon">&#9209;</span>
+                    <div>
+                        <div class="paused-banner-title">Scraper Paused</div>
+                        <div class="paused-banner-detail">All scraping is stopped. Press Start to resume.</div>
+                    </div>
+                </div>
+                <button class="btn btn-success btn-sm" onclick="resumeEngine()">Start</button>
+            </div>
+            <div class="card">
+                <div class="card-title">Manual Scrape</div>
+                <div id="baserow-warning" class="baserow-warning" style="display:none">
+                    Baserow not configured. Wallpapers will be scraped but not uploaded. Configure Baserow in the Baserow tab.
+                </div>
+                <div class="form-group">
+                    <label>URL to scrape</label>
+                    <textarea id="scrape-url" rows="2" placeholder="https://wallhaven.cc/search?sorting=views"></textarea>
+                </div>
+                <div class="settings-grid-2">
+                    <div class="form-group">
+                        <label>Source Name (optional)</label>
+                        <input type="text" id="scrape-name" placeholder="My Source">
+                    </div>
+                    <div class="form-group">
+                        <label>Max Pages</label>
+                        <input type="number" id="scrape-pages" value="5" min="1" max="50">
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="scrape-btn" onclick="startScrape()">Start Scrape</button>
+            </div>
+            <div class="card">
+                <div class="card-title">Recent Jobs</div>
+                <div id="scrape-jobs"></div>
+            </div>
+        </div>
+
+        <!-- ==================== Sources ==================== -->
+        <div id="tab-sources" class="tab-content">
+            <div class="scheduler-banner" id="scheduler-banner">
+                <div style="display:flex;align-items:center">
+                    <span class="status-dot" id="scheduler-dot"></span>
+                    <span id="scheduler-text">Scheduler: Loading...</span>
+                </div>
+                <button class="btn btn-sm btn-secondary" id="scheduler-toggle-btn" onclick="toggleScheduler()">Pause</button>
+            </div>
+
+            <div id="sources-paused-banner" class="paused-banner" style="display:none">
+                <div class="paused-banner-content">
+                    <span class="paused-banner-icon">&#9209;</span>
+                    <div>
+                        <div class="paused-banner-title">Scraper Paused</div>
+                        <div class="paused-banner-detail">All scraping is stopped. Press Start to resume.</div>
+                    </div>
+                </div>
+                <button class="btn btn-success btn-sm" onclick="resumeEngine()">Start</button>
+            </div>
+
+            <div class="scraping-banner" id="scraping-banner" style="display:none">
+                <div class="scraping-banner-content">
+                    <span class="spinner"></span>
+                    <div>
+                        <div class="scraping-banner-title" id="scraping-banner-title">Currently Scraping...</div>
+                        <div class="scraping-banner-detail" id="scraping-banner-detail"></div>
+                    </div>
+                </div>
+                <div class="scraping-banner-progress">
+                    <div class="progress scraping-progress-bar">
+                        <div class="progress-bar" id="scraping-banner-progress-bar"></div>
+                    </div>
+                    <span class="scraping-banner-stats" id="scraping-banner-stats"></span>
+                    <button class="btn btn-danger btn-sm" onclick="stopAll()">Stop</button>
+                </div>
+            </div>
+
+            <div class="discovery-banner" id="discovery-banner">
+                <div style="display:flex;align-items:center">
+                    <span class="status-dot" id="discovery-dot"></span>
+                    <span id="discovery-text">Discovery: Loading...</span>
+                </div>
+                <div id="discovery-next" class="countdown"></div>
+            </div>
+
+            <div class="sources-header">
+                <h3>Wallpaper Sources</h3>
+                <div style="display:flex;gap:0.5rem">
+                    <button class="btn btn-secondary btn-sm" onclick="shuffleSources()" title="Randomize source order">Shuffle</button>
+                    <button class="btn btn-primary btn-sm" onclick="showAddSourceModal()">Add Source</button>
+                </div>
+            </div>
+
+            <div class="table-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:30px"></th>
+                            <th>Enabled</th>
+                            <th>Status</th>
+                            <th>Name</th>
+                            <th>Category</th>
+                            <th>Schedule</th>
+                            <th>Last Scraped</th>
+                            <th>Next Run</th>
+                            <th>Total</th>
+                            <th>Health</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sources-table"></tbody>
+                </table>
+            </div>
+
+            <div class="collapsible-header" onclick="toggleCollapsible('discovery-section')">
+                <span style="font-weight:600">Discovery Queries</span>
+                <span id="discovery-section-arrow">&#9650;</span>
+            </div>
+            <div class="collapsible-content open" id="discovery-section">
+                <div class="discovery-controls">
+                    <input type="text" id="new-query-input" placeholder="Add search query..." class="discovery-query-input">
+                    <button class="btn btn-primary btn-sm" onclick="addQuery()">Add Query</button>
+                    <button class="btn btn-secondary btn-sm" onclick="runDiscovery()">Discover Now</button>
+                </div>
+                <div class="table-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Enabled</th>
+                                <th>Query</th>
+                                <th>Type</th>
+                                <th>Used</th>
+                                <th>Found</th>
+                                <th>Last Used</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="queries-table"></tbody>
+                    </table>
+                </div>
+                <div class="card" style="margin-top:1.25rem">
+                    <div class="card-title">Discovery Log</div>
+                    <div id="discovery-log" style="font-size:13px;color:var(--text-tertiary)">No recent discovery results.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== Jobs ==================== -->
+        <div id="tab-jobs" class="tab-content">
+            <div style="margin-bottom:1.25rem">
+                <select id="jobs-status-filter" style="max-width:160px" onchange="loadJobs()">
+                    <option value="">All Status</option>
+                    <option value="running">Running</option>
+                    <option value="completed">Completed</option>
+                </select>
+            </div>
+            <div id="jobs-list"></div>
+        </div>
+
+        <!-- ==================== Characters ==================== -->
+        <div id="tab-characters" class="tab-content">
+            <div class="char-header">
+                <div class="char-stats" id="char-stats"></div>
+                <div class="char-controls">
+                    <input type="text" id="char-search" class="char-search" placeholder="Search characters..." oninput="filterCharacters()">
+                    <select id="char-filter" class="char-filter" onchange="loadCharacters()">
+                        <option value="">All</option>
+                        <option value="builtin">Built-in</option>
+                        <option value="user">User Added</option>
+                        <option value="discovered">Auto-Discovered</option>
+                    </select>
+                    <button class="btn btn-secondary btn-sm" onclick="discoverCharacters()" id="char-discover-btn">Discover Characters</button>
+                    <button class="btn btn-primary btn-sm" onclick="showAddCharacter()">+ Add Character</button>
+                </div>
+            </div>
+
+            <!-- Add/Edit Character Form (hidden by default) -->
+            <div class="card char-form-card" id="char-form" style="display:none">
+                <div class="card-title" id="char-form-title">Add Character</div>
+                <input type="hidden" id="char-edit-id">
+                <div class="settings-grid-2">
+                    <div class="form-group">
+                        <label>Name *</label>
+                        <input type="text" id="char-name" placeholder="e.g. Spider-Man">
+                    </div>
+                    <div class="form-group">
+                        <label>Franchise / Series</label>
+                        <input type="text" id="char-franchise" placeholder="e.g. Marvel">
+                    </div>
+                </div>
+                <div class="settings-grid-2">
+                    <div class="form-group">
+                        <label>Media Type</label>
+                        <select id="char-media-type">
+                            <option value="">Unknown</option>
+                            <option value="anime">Anime</option>
+                            <option value="game">Video Game</option>
+                            <option value="movie">Movie</option>
+                            <option value="tv">TV Show</option>
+                            <option value="comic">Comic</option>
+                            <option value="cartoon">Cartoon</option>
+                            <option value="celebrity">Celebrity</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>CLIP Description</label>
+                        <input type="text" id="char-clip-desc" placeholder="Visual description for AI recognition">
+                    </div>
+                </div>
+                <div class="char-upload-section">
+                    <div class="char-upload-area" id="char-upload-area" onclick="document.getElementById('char-image-input').click()">
+                        <div class="char-upload-content" id="char-upload-content">
+                            <div class="char-upload-icon">&#128247;</div>
+                            <div class="char-upload-text">Upload a reference image</div>
+                            <div class="char-upload-hint">AI will generate a visual description automatically</div>
+                        </div>
+                        <img id="char-upload-preview" class="char-upload-preview" style="display:none">
+                    </div>
+                    <input type="file" id="char-image-input" accept="image/*" style="display:none" onchange="handleCharImageUpload(event)">
+                    <div class="char-upload-status" id="char-upload-status" style="display:none">
+                        <span class="spinner"></span> Analyzing image...
+                    </div>
+                </div>
+                <p style="font-size:12px;color:var(--text-muted);margin-bottom:0.75rem">Upload a reference image and the AI will describe the character's appearance for recognition. Or type a description manually. The image is analyzed then deleted — it's not stored.</p>
+                <div style="display:flex;gap:0.5rem">
+                    <button class="btn btn-success btn-sm" onclick="saveCharacter()">Save</button>
+                    <button class="btn btn-secondary btn-sm" onclick="hideCharForm()">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Pending Discoveries Banner -->
+            <div class="card char-discoveries-card" id="char-discoveries" style="display:none">
+                <div class="card-title">Auto-Discovered Characters</div>
+                <p style="font-size:13px;color:var(--text-tertiary);margin-bottom:0.75rem">The scraper found these character names in page metadata and verified them with AI. Confirm to add them to recognition, or reject to dismiss.</p>
+                <div id="char-discovery-list"></div>
+            </div>
+
+            <!-- Character Discovery Log -->
+            <div class="card" id="char-discovery-log-card" style="display:none;margin-bottom:1.25rem">
+                <div class="card-title">Character Discovery Log</div>
+                <div id="char-discovery-log" style="font-size:13px;color:var(--text-tertiary)">No recent character discoveries.</div>
+            </div>
+
+            <!-- Character Table -->
+            <div class="table-scroll">
+                <table class="char-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Franchise</th>
+                            <th>Type</th>
+                            <th>Source</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="char-table"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ==================== Settings ==================== -->
+        <div id="tab-settings" class="tab-content">
+
+            <div class="card">
+                <div class="card-title">AI Captioning Provider</div>
+                <p style="font-size:13px;color:var(--text-tertiary);margin-bottom:1rem">Use a cloud AI model (Gemini, Claude, or OpenRouter) for more accurate wallpaper titles, alt text, and tags. When enabled, the cloud model replaces local BLIP captioning. Falls back to BLIP automatically if the API call fails.</p>
+
+                <div class="settings-option" style="margin-bottom:1rem">
+                    <input type="checkbox" id="set-cloud-enabled" style="margin-top:3px" onchange="toggleCloudAIFields()">
+                    <div class="settings-option-text">
+                        <h4>Enable Cloud AI Captioning</h4>
+                        <p>Use Gemini, Claude, or OpenRouter instead of local BLIP for wallpaper titles, descriptions, and tags</p>
+                    </div>
+                </div>
+
+                <div id="cloud-ai-fields" style="display:none">
+                    <div class="settings-grid-2">
+                        <div class="form-group">
+                            <label>Provider</label>
+                            <select id="set-cloud-provider" onchange="updateCloudModelOptions()">
+                                <option value="">Select...</option>
+                                <option value="gemini">Gemini (Google)</option>
+                                <option value="claude">Claude (Anthropic)</option>
+                                <option value="openrouter">OpenRouter (multi-model)</option>
+                            </select>
+                            <p style="font-size:12px;color:var(--text-muted);margin-top:0.3rem" id="cloud-provider-hint"></p>
+                        </div>
+                        <div class="form-group">
+                            <label>Model</label>
+                            <select id="set-cloud-model">
+                                <option value="">Default</option>
+                            </select>
+                            <p style="font-size:12px;color:var(--text-muted);margin-top:0.3rem" id="cloud-model-hint">Leave as Default for the recommended model</p>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom:1rem">
+                        <label>API Key</label>
+                        <div style="display:flex;gap:0.5rem;align-items:flex-start">
+                            <input type="password" id="set-cloud-api-key" placeholder="Paste your API key" style="flex:1">
+                            <button class="btn btn-secondary btn-sm" onclick="toggleApiKeyVisibility()" id="toggle-key-btn" style="white-space:nowrap">Show</button>
+                        </div>
+                        <p style="font-size:12px;color:var(--text-muted);margin-top:0.3rem" id="cloud-key-hint">Your API key is stored locally and never shared</p>
+                    </div>
+                    <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:1rem">
+                        <button class="btn btn-secondary btn-sm" onclick="testCloudAI()" id="test-cloud-btn">Test Connection</button>
+                        <span id="cloud-test-result" style="font-size:13px"></span>
+                    </div>
+
+                    <!-- Demo Section (shown after successful connection test) -->
+                    <div id="cloud-demo-section" style="display:none;border-top:1px solid var(--separator);padding-top:1rem;margin-top:0.5rem">
+                        <h4 style="margin-bottom:0.5rem;font-size:14px">Demo — Test Captioning</h4>
+                        <p style="font-size:12px;color:var(--text-muted);margin-bottom:0.75rem">Upload a wallpaper to see how the cloud AI generates titles, alt text, and tags.</p>
+                        <div class="char-upload-area" id="demo-upload-area" onclick="document.getElementById('demo-image-input').click()" style="margin-bottom:0.75rem;min-height:120px">
+                            <div class="char-upload-content" id="demo-upload-content">
+                                <div class="char-upload-icon">&#128444;</div>
+                                <div class="char-upload-text">Drop a wallpaper here or click to upload</div>
+                            </div>
+                            <img id="demo-upload-preview" class="char-upload-preview" style="display:none;max-height:200px">
+                        </div>
+                        <input type="file" id="demo-image-input" accept="image/*" style="display:none" onchange="handleDemoUpload(event)">
+                        <div id="demo-status" style="display:none;font-size:13px;color:var(--text-tertiary);margin-bottom:0.75rem">
+                            <span class="spinner"></span> Generating caption...
+                        </div>
+                        <div id="demo-results" class="card" style="display:none;background:var(--card-hover)">
+                            <div style="margin-bottom:0.5rem"><strong>Title:</strong> <span id="demo-title"></span></div>
+                            <div style="margin-bottom:0.5rem"><strong>Alt Text:</strong> <span id="demo-alt" style="color:var(--text-secondary)"></span></div>
+                            <div><strong>Tags:</strong> <span id="demo-tags" style="color:var(--text-muted);font-size:13px"></span></div>
+                            <div style="margin-top:0.5rem;font-size:12px;color:var(--text-muted)">Provider: <span id="demo-provider-info"></span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Prompts & Word Filters (collapsible) -->
+            <div class="card">
+                <div class="collapsible-header" onclick="toggleCollapsible('ai-prompts-section')">
+                    <span style="font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-tertiary)">AI Prompts & Word Filters</span>
+                    <span id="ai-prompts-section-arrow">&#9660;</span>
+                </div>
+                <div class="collapsible-content" id="ai-prompts-section">
+                    <p style="font-size:13px;color:var(--text-tertiary);margin-bottom:1rem">
+                        Customize the system prompt and word filters used by AI captioning.
+                        The word lists control which words are stripped from titles, alt text, and tags.
+                        Changes take effect on the next scrape.
+                    </p>
+
+                    <!-- AI System Prompt -->
+                    <div class="form-group" style="margin-bottom:1.5rem">
+                        <label>AI System Prompt</label>
+                        <p style="font-size:12px;color:var(--text-muted);margin-bottom:0.5rem">
+                            The instruction sent to Gemini, Claude, or OpenRouter when generating titles, alt text, and tags.
+                            Controls how the cloud AI names and describes wallpapers.
+                        </p>
+                        <textarea id="set-cloud-system-prompt" rows="8"
+                            style="width:100%;font-family:monospace;font-size:12px"></textarea>
+                        <button class="btn btn-secondary btn-sm" style="margin-top:0.4rem"
+                            onclick="resetAIField('cloud_system_prompt','set-cloud-system-prompt')">Reset to Default</button>
+                    </div>
+
+                    <!-- Word Filter Lists -->
+                    <div>
+                        <label style="font-weight:600;margin-bottom:0.5rem;display:block">Word Filter Lists</label>
+                        <p style="font-size:12px;color:var(--text-muted);margin-bottom:0.75rem">
+                            Words and phrases to strip from AI output. One per line.
+                        </p>
+                        <div class="settings-grid-2">
+                            <div class="form-group">
+                                <label>Strip Words</label>
+                                <p style="font-size:11px;color:var(--text-muted);margin-bottom:0.3rem">
+                                    Words removed from titles and alt text (site names, resolution labels, generic terms)
+                                </p>
+                                <textarea id="set-strip-words" rows="6"
+                                    style="width:100%;font-family:monospace;font-size:12px"></textarea>
+                                <button class="btn btn-secondary btn-sm" style="margin-top:0.3rem"
+                                    onclick="resetAIField('strip_words','set-strip-words')">Reset</button>
+                            </div>
+                            <div class="form-group">
+                                <label>Robotic Adjectives</label>
+                                <p style="font-size:11px;color:var(--text-muted);margin-bottom:0.3rem">
+                                    AI-sounding adjectives stripped from titles (e.g. "beautiful", "stunning")
+                                </p>
+                                <textarea id="set-robotic-adjectives" rows="6"
+                                    style="width:100%;font-family:monospace;font-size:12px"></textarea>
+                                <button class="btn btn-secondary btn-sm" style="margin-top:0.3rem"
+                                    onclick="resetAIField('robotic_adjectives','set-robotic-adjectives')">Reset</button>
+                            </div>
+                            <div class="form-group">
+                                <label>Junk Tags</label>
+                                <p style="font-size:11px;color:var(--text-muted);margin-bottom:0.3rem">
+                                    Tags always removed from the final tag list
+                                </p>
+                                <textarea id="set-junk-tags" rows="5"
+                                    style="width:100%;font-family:monospace;font-size:12px"></textarea>
+                                <button class="btn btn-secondary btn-sm" style="margin-top:0.3rem"
+                                    onclick="resetAIField('junk_tags','set-junk-tags')">Reset</button>
+                            </div>
+                            <div class="form-group">
+                                <label>Generic Prefixes</label>
+                                <p style="font-size:11px;color:var(--text-muted);margin-bottom:0.3rem">
+                                    Prefixes stripped from BLIP output (e.g. "a photo of", "this is")
+                                </p>
+                                <textarea id="set-generic-prefixes" rows="5"
+                                    style="width:100%;font-family:monospace;font-size:12px"></textarea>
+                                <button class="btn btn-secondary btn-sm" style="margin-top:0.3rem"
+                                    onclick="resetAIField('generic_prefixes','set-generic-prefixes')">Reset</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Resolution Filters</div>
+                <p style="font-size:13px;color:var(--text-tertiary);margin-bottom:1rem">Images smaller than these dimensions will be rejected. Near-miss images may be AI-upscaled if enhancement is enabled.</p>
+                <div class="settings-grid-2">
+                    <div class="form-group">
+                        <label>Min Width (px)</label>
+                        <input type="number" id="set-min-width" value="800" min="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Min Height (px)</label>
+                        <input type="number" id="set-min-height" value="600" min="100">
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Aspect Ratio Filters</div>
+                <p style="font-size:13px;color:var(--text-tertiary);margin-bottom:1rem">Select which aspect ratios to accept. Leave all unchecked to accept all ratios.</p>
+                <div class="aspect-grid" id="aspect-checkboxes">
+                    <label class="aspect-label"><input type="checkbox" value="16:9" class="aspect-cb"> <svg class="aspect-icon" viewBox="0 0 32 18" width="32" height="18"><rect x="0.5" y="0.5" width="31" height="17" rx="2"/></svg> <span>16:9 <span class="aspect-hint">Widescreen</span></span></label>
+                    <label class="aspect-label"><input type="checkbox" value="16:10" class="aspect-cb"> <svg class="aspect-icon" viewBox="0 0 29 18" width="29" height="18"><rect x="0.5" y="0.5" width="28" height="17" rx="2"/></svg> <span>16:10</span></label>
+                    <label class="aspect-label"><input type="checkbox" value="21:9" class="aspect-cb"> <svg class="aspect-icon" viewBox="0 0 42 18" width="42" height="18"><rect x="0.5" y="0.5" width="41" height="17" rx="2"/></svg> <span>21:9 <span class="aspect-hint">Ultrawide</span></span></label>
+                    <label class="aspect-label"><input type="checkbox" value="32:9" class="aspect-cb"> <svg class="aspect-icon" viewBox="0 0 64 18" width="56" height="9"><rect x="0.5" y="0.5" width="63" height="17" rx="2"/></svg> <span>32:9 <span class="aspect-hint">Super UW</span></span></label>
+                    <label class="aspect-label"><input type="checkbox" value="4:3" class="aspect-cb"> <svg class="aspect-icon" viewBox="0 0 24 18" width="24" height="18"><rect x="0.5" y="0.5" width="23" height="17" rx="2"/></svg> <span>4:3</span></label>
+                    <label class="aspect-label"><input type="checkbox" value="3:2" class="aspect-cb"> <svg class="aspect-icon" viewBox="0 0 27 18" width="27" height="18"><rect x="0.5" y="0.5" width="26" height="17" rx="2"/></svg> <span>3:2</span></label>
+                    <label class="aspect-label"><input type="checkbox" value="5:4" class="aspect-cb"> <svg class="aspect-icon" viewBox="0 0 23 18" width="23" height="18"><rect x="0.5" y="0.5" width="22" height="17" rx="2"/></svg> <span>5:4</span></label>
+                    <label class="aspect-label"><input type="checkbox" value="1:1" class="aspect-cb"> <svg class="aspect-icon" viewBox="0 0 18 18" width="18" height="18"><rect x="0.5" y="0.5" width="17" height="17" rx="2"/></svg> <span>1:1 <span class="aspect-hint">Square</span></span></label>
+                    <label class="aspect-label"><input type="checkbox" value="9:16" class="aspect-cb"> <svg class="aspect-icon" viewBox="0 0 11 20" width="11" height="20"><rect x="0.5" y="0.5" width="10" height="19" rx="2"/></svg> <span>9:16 <span class="aspect-hint">Mobile</span></span></label>
+                    <label class="aspect-label"><input type="checkbox" value="9:19" class="aspect-cb"> <svg class="aspect-icon" viewBox="0 0 9 19" width="9" height="22"><rect x="0.5" y="0.5" width="8" height="18" rx="1.5"/></svg> <span>9:19 <span class="aspect-hint">Mobile</span></span></label>
+                    <label class="aspect-label"><input type="checkbox" value="9:20" class="aspect-cb"> <svg class="aspect-icon" viewBox="0 0 9 20" width="9" height="23"><rect x="0.5" y="0.5" width="8" height="19" rx="1.5"/></svg> <span>9:20 <span class="aspect-hint">Mobile</span></span></label>
+                </div>
+                <div style="margin-top:1rem">
+                    <label class="aspect-label" style="display:inline-flex"><input type="checkbox" id="set-allow-mobile" checked> Allow mobile/portrait wallpapers</label>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Image Filtering</div>
+                <div class="settings-option">
+                    <input type="checkbox" id="set-watermark-detection" checked style="margin-top:3px">
+                    <div class="settings-option-text">
+                        <h4>Watermark Detection</h4>
+                        <p>Reject images that appear to have stock photo watermarks (Shutterstock, iStock, etc.)</p>
+                    </div>
+                </div>
+                <div class="settings-option">
+                    <input type="checkbox" id="set-allow-nsfw" style="margin-top:3px">
+                    <div class="settings-option-text">
+                        <h4>Allow NSFW / Adult Content</h4>
+                        <p>When disabled, the scraper will skip pages and images containing nudity, gore, violence, drugs, or other content inappropriate for young teens. Checks URLs, page metadata, image tags, and known NSFW domains. Default: OFF.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Scraping</div>
+                <p style="font-size:13px;color:var(--text-tertiary);margin-bottom:1rem">Controls how the scraper browses sites and downloads images. Changes take effect on the next scrape job.</p>
+                <div class="settings-grid-3">
+                    <div class="form-group">
+                        <label>Max Pages</label>
+                        <input type="number" id="set-max-pages" value="10" min="1" max="100">
+                        <p style="font-size:12px;color:var(--text-muted);margin-top:0.3rem">Maximum number of gallery/listing pages to crawl per source. Higher values find more wallpapers but take longer.</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Page Delay (seconds)</label>
+                        <input type="number" id="set-page-delay" value="2" min="1" max="30">
+                        <p style="font-size:12px;color:var(--text-muted);margin-top:0.3rem">Base wait time between page loads. Random jitter is added automatically. Lower values scrape faster but may trigger rate-limiting.</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Concurrent Downloads</label>
+                        <input type="number" id="set-max-dl" value="3" min="1" max="10">
+                        <p style="font-size:12px;color:var(--text-muted);margin-top:0.3rem">How many images can be downloaded at the same time. Higher values are faster but may overwhelm slower sites.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">JPEG Compression</div>
+                <p style="font-size:13px;color:var(--text-tertiary);margin-bottom:1rem">All downloaded wallpapers are re-compressed as JPEG before uploading to Baserow. This controls the output quality.</p>
+                <div class="form-group">
+                    <label>Quality (1-100)</label>
+                    <input type="number" id="set-jpeg-quality" value="85" min="1" max="100">
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:0.3rem">Higher values preserve more detail but produce larger files. 85 is a good balance; 95+ is near-lossless.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Scheduler</div>
+                <p style="font-size:13px;color:var(--text-tertiary);margin-bottom:1rem">The scheduler automatically scrapes enabled sources on a recurring basis.</p>
+                <div class="form-group">
+                    <label>Check Interval (minutes)</label>
+                    <input type="number" id="set-check-interval" value="5" min="1" max="1440">
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:0.3rem">How often the scheduler checks if any sources are due for scraping. Each source has its own schedule (e.g., every 12 hours) set in the Sources tab.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Gallery</div>
+                <p style="font-size:13px;color:var(--text-tertiary);margin-bottom:1rem">Controls the local activity gallery on the Gallery tab. These limits prevent the activity log from growing too large on disk.</p>
+                <div class="settings-grid-2">
+                    <div class="form-group">
+                        <label>Max Activity Entries</label>
+                        <input type="number" id="set-max-entries" value="5000" min="100" max="50000">
+                        <p style="font-size:12px;color:var(--text-muted);margin-top:0.3rem">Maximum number of wallpapers to keep in the local activity log. Oldest entries are pruned first.</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Max Thumbnails</label>
+                        <input type="number" id="set-max-thumbs" value="5000" min="100" max="50000">
+                        <p style="font-size:12px;color:var(--text-muted);margin-top:0.3rem">Maximum number of thumbnail images to store on disk. Orphaned thumbnails are cleaned up automatically.</p>
+                    </div>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+        </div>
+
+        <!-- ==================== Baserow ==================== -->
+        <div id="tab-baserow" class="tab-content">
+            <div class="card">
+                <div class="card-title">Connection</div>
+                <div class="form-group">
+                    <label>API URL</label>
+                    <input type="text" id="br-url" placeholder="https://baserow.jymedia.cc">
+                </div>
+                <div class="form-group">
+                    <label>API Token</label>
+                    <div style="display:flex;gap:0.5rem">
+                        <input type="password" id="br-token" placeholder="Your API token">
+                        <button class="btn btn-sm btn-secondary" onclick="toggleTokenVisibility()" style="flex-shrink:0">Show</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Table ID</label>
+                    <input type="number" id="br-table-id" placeholder="810">
+                </div>
+                <div style="display:flex;gap:0.75rem">
+                    <button class="btn btn-primary" onclick="testBaserow()">Test Connection</button>
+                    <button class="btn btn-success" onclick="saveBaserow()">Save</button>
+                </div>
+                <div id="br-test-result" style="margin-top:1rem"></div>
+            </div>
+
+            <div class="card" id="field-mapping-section" style="display:none">
+                <div class="card-title">Field Mapping</div>
+                <div class="mapping-bar" id="mapping-bar"></div>
+                <div class="table-scroll">
+                    <table class="mapping-table">
+                        <thead>
+                            <tr>
+                                <th>Scraper Field</th>
+                                <th></th>
+                                <th>Baserow Column</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mapping-table"></tbody>
+                    </table>
+                </div>
+                <div class="mapping-actions">
+                    <button class="btn btn-primary btn-sm" onclick="refreshFields()">Refresh Fields</button>
+                    <button class="btn btn-secondary btn-sm" onclick="autoMatchFields()">Auto-Match</button>
+                    <button class="btn btn-secondary btn-sm" onclick="resetMapping()">Reset Defaults</button>
+                    <button class="btn btn-success btn-sm" onclick="saveMapping()">Save Mapping</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== Browse Baserow ==================== -->
+        <div id="tab-browse" class="tab-content">
+            <div id="browse-unconfigured" style="display:none">
+                <div class="empty-state">
+                    <div class="empty-state-icon">&#128450;</div>
+                    <div class="empty-state-text">Baserow not configured</div>
+                    <div class="empty-state-hint">Configure Baserow in the Baserow tab to browse uploaded wallpapers.</div>
+                </div>
+            </div>
+            <div id="browse-main">
+                <div class="browse-toolbar">
+                    <input type="text" id="browse-search" class="browse-search-input" placeholder="Search wallpapers...">
+                    <select id="browse-sort" class="browse-sort-select">
+                        <option value="__newest">Newest First</option>
+                        <option value="">Default Order</option>
+                        <option value="wallpaperTitle">Title A-Z</option>
+                        <option value="-wallpaperTitle">Title Z-A</option>
+                        <option value="-Width">Widest First</option>
+                        <option value="-Height">Tallest First</option>
+                    </select>
+                    <button class="btn btn-primary btn-sm" onclick="loadBrowse()" id="browse-load-btn">Load</button>
+                    <button class="btn btn-secondary btn-sm" onclick="retryAllBrowseImages()">Retry Failed</button>
+                    <span id="browse-count" class="browse-count-text"></span>
+                </div>
+                <div id="browse-loading-banner" style="display:none" class="scraping-banner">
+                    <div class="scraping-banner-content">
+                        <span class="spinner"></span>
+                        <span style="font-size:13px">Loading wallpapers from Baserow...</span>
+                    </div>
+                </div>
+                <div class="browse-grid" id="browse-grid"></div>
+                <div class="browse-pagination" id="browse-pagination"></div>
+            </div>
+        </div>
+
+        <!-- ==================== Stats ==================== -->
+        <div id="tab-stats" class="tab-content">
+            <div class="stat-grid" id="stats-summary"></div>
+            <div class="card">
+                <div class="card-title">Per-Source Statistics</div>
+                <div class="table-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Source</th>
+                                <th>Category</th>
+                                <th>Uploaded</th>
+                                <th>Dupes</th>
+                                <th>Errors</th>
+                                <th>Last Scraped</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stats-sources"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">Discovery Statistics</div>
+                <div id="stats-discovery"></div>
+            </div>
+        </div>
+
+        <!-- ==================== Logs ==================== -->
+        <div id="tab-logs" class="tab-content">
+            <div class="logs-toolbar">
+                <select id="logs-level-filter" onchange="loadLogs()">
+                    <option value="">All Levels</option>
+                    <option value="DEBUG">Debug</option>
+                    <option value="INFO">Info</option>
+                    <option value="WARNING">Warning</option>
+                    <option value="ERROR">Error</option>
+                    <option value="CRITICAL">Critical</option>
+                </select>
+                <select id="logs-line-count" onchange="loadLogs()">
+                    <option value="100">100 lines</option>
+                    <option value="200" selected>200 lines</option>
+                    <option value="500">500 lines</option>
+                    <option value="1000">1000 lines</option>
+                </select>
+                <label class="log-auto-scroll">
+                    <input type="checkbox" id="logs-auto-scroll" checked> Auto-scroll
+                </label>
+                <button class="btn btn-sm btn-secondary" onclick="loadLogs()">Refresh</button>
+                <span id="logs-total" style="font-size:12px;color:var(--text-muted);margin-left:auto"></span>
+            </div>
+            <div class="log-viewer" id="logs-container">
+                <div style="color:var(--text-muted);padding:2rem;text-align:center">Loading logs...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal overlay -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal" id="modal-content"></div>
+    </div>
+
+    <!-- Browse lightbox overlay -->
+    <div class="lightbox-overlay" id="lightbox-overlay">
+        <button class="lightbox-close" id="lightbox-close" title="Close (Esc)">&times;</button>
+        <button class="lightbox-nav lightbox-prev" id="lightbox-prev" title="Previous (Left arrow)">&#8249;</button>
+        <button class="lightbox-nav lightbox-next" id="lightbox-next" title="Next (Right arrow)">&#8250;</button>
+        <div class="lightbox-content" id="lightbox-content">
+            <div class="lightbox-image-wrap">
+                <img class="lightbox-image" id="lightbox-image" alt="">
+                <div class="lightbox-spinner" id="lightbox-spinner"><span class="spinner"></span></div>
+            </div>
+            <div class="lightbox-info" id="lightbox-info"></div>
+        </div>
+        <div class="lightbox-counter" id="lightbox-counter"></div>
+    </div>
+
+    <!-- Toast container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Mobile bottom tab bar (iOS-style) -->
+    <nav class="mobile-tab-bar" id="mobile-tab-bar">
+        <button class="mobile-tab active" data-tab="gallery">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            <span>Gallery</span>
+        </button>
+        <button class="mobile-tab" data-tab="scrape">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span>Scrape</span>
+        </button>
+        <button class="mobile-tab" data-tab="sources">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0022 16z"/><polyline points="7.5 4.21 12 6.81 16.5 4.21"/><polyline points="7.5 19.79 7.5 14.6 3 12"/><polyline points="21 12 16.5 14.6 16.5 19.79"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            <span>Sources</span>
+        </button>
+        <button class="mobile-tab" data-tab="browse">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span>Browse</span>
+        </button>
+        <button class="mobile-tab" data-tab="more" id="mobile-more-tab">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+            <span>More</span>
+        </button>
+    </nav>
+
+    <!-- Mobile "More" sheet -->
+    <div class="mobile-more-sheet" id="mobile-more-sheet">
+        <div class="mobile-more-backdrop" id="mobile-more-backdrop"></div>
+        <div class="mobile-more-content">
+            <div class="mobile-more-handle"></div>
+            <div class="mobile-more-grid">
+                <button class="mobile-more-item" data-tab="jobs">
+                    <div class="mobile-more-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+                    <span>Jobs</span>
+                </button>
+                <button class="mobile-more-item" data-tab="characters">
+                    <div class="mobile-more-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+                    <span>Characters</span>
+                </button>
+                <button class="mobile-more-item" data-tab="settings">
+                    <div class="mobile-more-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div>
+                    <span>Settings</span>
+                </button>
+                <button class="mobile-more-item" data-tab="baserow">
+                    <div class="mobile-more-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></div>
+                    <span>Baserow</span>
+                </button>
+                <button class="mobile-more-item" data-tab="stats">
+                    <div class="mobile-more-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
+                    <span>Stats</span>
+                </button>
+                <button class="mobile-more-item" data-tab="logs">
+                    <div class="mobile-more-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
+                    <span>Logs</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js?v=8"></script>
+</body>
+</html>
