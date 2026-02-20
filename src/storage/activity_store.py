@@ -60,10 +60,11 @@ class ActivityStore:
 
     def __init__(self):
         self._entries: list[dict] = []
+        self._hash_pixels: dict[str, int] = {}
         self._loaded = False
 
     def load(self):
-        """Load activity from disk."""
+        """Load activity from disk and build hash index."""
         try:
             if ACTIVITY_PATH.exists():
                 with open(ACTIVITY_PATH, "r") as f:
@@ -72,10 +73,21 @@ class ActivityStore:
             else:
                 self._entries = []
             self._loaded = True
+            self._rebuild_hash_index()
         except Exception as e:
             logger.warning(f"Failed to load activity: {e}")
             self._entries = []
             self._loaded = True
+
+    def _rebuild_hash_index(self):
+        """Build hash → max pixel count index for fast dedup lookups."""
+        self._hash_pixels: dict[str, int] = {}
+        for e in self._entries:
+            h = e.get("img_hash", "")
+            if h and e.get("status") in ("uploaded", "upgraded"):
+                pixels = e.get("width", 0) * e.get("height", 0)
+                if pixels > self._hash_pixels.get(h, 0):
+                    self._hash_pixels[h] = pixels
 
     def save(self):
         """Save activity to disk."""
@@ -87,10 +99,51 @@ class ActivityStore:
             logger.error(f"Failed to save activity: {e}")
 
     def add_entry(self, entry: ActivityEntry):
-        """Add an activity entry."""
+        """Add an activity entry, deduplicating by img_hash.
+
+        When a wallpaper with the same perceptual hash already exists:
+        - "uploaded" or "upgraded": replace the old entry if the new one
+          has higher resolution, otherwise skip.
+        - "duplicate" or "error": always add (they're informational).
+        This prevents the gallery from showing the same wallpaper at
+        multiple resolutions.
+        """
         if not self._loaded:
             self.load()
-        self._entries.insert(0, entry.model_dump())
+
+        new_data = entry.model_dump()
+        img_hash = entry.img_hash
+
+        # Hash-based dedup for actual uploads/upgrades
+        if img_hash and entry.status in ("uploaded", "upgraded"):
+            new_pixels = entry.width * entry.height
+            for i, existing in enumerate(self._entries):
+                if (
+                    existing.get("img_hash") == img_hash
+                    and existing.get("status") in ("uploaded", "upgraded")
+                ):
+                    old_pixels = existing.get("width", 0) * existing.get("height", 0)
+                    if new_pixels >= old_pixels:
+                        # Replace the old entry with the higher-res version
+                        self._entries.pop(i)
+                        logger.info(
+                            f"Gallery dedup: replacing {existing.get('width')}x"
+                            f"{existing.get('height')} with {entry.width}x"
+                            f"{entry.height} ({img_hash})"
+                        )
+                    else:
+                        # Old entry is already higher-res — just mark this as dup
+                        new_data["status"] = "duplicate"
+                    break
+
+        self._entries.insert(0, new_data)
+
+        # Keep hash index up to date
+        if img_hash and new_data.get("status") in ("uploaded", "upgraded"):
+            new_pixels = entry.width * entry.height
+            if new_pixels > self._hash_pixels.get(img_hash, 0):
+                self._hash_pixels[img_hash] = new_pixels
+
         # Prune if over max (reads limit from config)
         max_e = _max_entries()
         if len(self._entries) > max_e:
@@ -179,6 +232,27 @@ class ActivityStore:
             "errors": errors,
             "by_source": source_counts,
         }
+
+    def get_hash_pixels(self, img_hash: str) -> int:
+        """Return the highest pixel count stored for a hash, or 0 if unknown.
+
+        Used by the scraping engine for persistent dedup: if the hash is
+        already in the gallery at the same or higher resolution, the
+        download can be skipped entirely.
+        """
+        if not self._loaded:
+            self.load()
+        return self._hash_pixels.get(img_hash, 0)
+
+    def get_all_hash_pixels(self) -> dict[str, int]:
+        """Return the full hash → max pixel count index.
+
+        Used to seed the engine's in-memory dedup cache on startup so it
+        survives container/process restarts.
+        """
+        if not self._loaded:
+            self.load()
+        return dict(self._hash_pixels)
 
     def prune(self, max_entries: int = None, max_thumbnails: int = None):
         """Prune old entries and orphaned thumbnails."""

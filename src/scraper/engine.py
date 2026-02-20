@@ -100,9 +100,27 @@ class ScraperEngine:
         # Cross-job dedup caches — survive across scheduler runs as long as
         # the process is alive.  Prevents re-downloading images that were
         # already processed in a previous job.
-        # Maps hash → max pixel count (width*height) so upgrades still work
+        # Maps hash → max pixel count (width*height) so upgrades still work.
+        # Seeded from the activity store on startup so dedup survives restarts.
         self._processed_hashes: dict[str, int] = {}
         self._processed_urls: set[str] = set()
+        self._seed_hash_cache()
+
+    def _seed_hash_cache(self):
+        """Seed the in-memory hash cache from persisted activity data.
+
+        This ensures the dedup cache survives container/process restarts.
+        Without this, previously-scraped wallpapers would be re-downloaded
+        and potentially re-uploaded as duplicates after every restart.
+        """
+        try:
+            from src.storage.activity_store import activity_store
+            stored = activity_store.get_all_hash_pixels()
+            if stored:
+                self._processed_hashes.update(stored)
+                logger.info(f"Seeded hash cache with {len(stored)} entries from activity store")
+        except Exception as e:
+            logger.warning(f"Failed to seed hash cache: {e}")
 
     def _get_adapter(self) -> GenericAdapter:
         """Get adapter configured with current scraping settings."""
@@ -810,6 +828,22 @@ class ScraperEngine:
                         self._log_activity(job, img, img_hash, width, height, file_size_kb,
                                            thumb_path or "", None, "duplicate")
                         return result
+
+            # Local-only hash dedup when Baserow isn't configured.
+            # The activity store persists hashes to disk, so this survives
+            # restarts — preventing re-uploads of wallpapers already in the
+            # gallery even without Baserow.
+            if not self.baserow.is_configured:
+                from src.storage.activity_store import activity_store
+                stored_pixels = activity_store.get_hash_pixels(img_hash)
+                if stored_pixels >= new_pixels and stored_pixels > 0:
+                    self._processed_hashes[img_hash] = max(new_pixels, stored_pixels)
+                    self._processed_urls.add(norm)
+                    result.status = "duplicate"
+                    logger.debug(f"Local hash duplicate: {img_hash}")
+                    self._log_activity(job, img, img_hash, width, height, file_size_kb,
+                                       thumb_path or "", None, "duplicate")
+                    return result
 
             # AI captioning — pass scraped metadata so the captioner can
             # identify characters, media franchises, and art styles
