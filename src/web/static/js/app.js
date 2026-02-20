@@ -230,7 +230,7 @@ async function loadActivityFeed() {
         }
         feed.innerHTML = entries.map(e => `
             <div class="activity-item" onclick="showEntryDetail('${e.id}')">
-                <img class="activity-thumb" src="/${e.thumbnail_path || ''}" alt="" loading="lazy" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2250%22 height=%2250%22><rect fill=%22%231c1c1e%22 width=%2250%22 height=%2250%22/></svg>'">
+                <img class="activity-thumb" src="/${e.thumbnail_path || ''}" alt="${esc(e.alt_text || e.title || 'Wallpaper thumbnail')}" loading="lazy" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2250%22 height=%2250%22><rect fill=%22%231c1c1e%22 width=%2250%22 height=%2250%22/></svg>'">
                 <div class="activity-info">
                     <div class="activity-title">${esc(e.title || 'Untitled')}</div>
                     <div class="activity-meta">
@@ -308,7 +308,7 @@ async function showEntryDetail(id) {
                 <button class="modal-close" onclick="closeModal()">&times;</button>
             </div>
             <div style="text-align:center;margin-bottom:1.5rem">
-                <img src="/${e.thumbnail_path || ''}" style="max-width:100%;border-radius:var(--radius-md)" alt="">
+                <img src="/${e.thumbnail_path || ''}" style="max-width:100%;border-radius:var(--radius-md)" alt="${esc(e.alt_text || e.title || 'Wallpaper preview')}">
             </div>
             <table>
                 <tr><td style="color:var(--text-tertiary);width:120px">Alt Text</td><td>${esc(e.alt_text || '')}</td></tr>
@@ -930,16 +930,34 @@ async function updateCloudModelOptions() {
                 modelSelect.innerHTML = '<option value="">Default (recommended)</option>';
                 const models = data.models || [];
                 const recommended = data.recommended || '';
-                models.forEach(m => {
-                    const costLabel = m.cost_per_hour === 0
-                        ? 'free'
-                        : `~$${m.cost_per_hour.toFixed(3)}/hr`;
-                    const rec = m.id === recommended ? ' \u2605' : '';
-                    modelSelect.innerHTML += `<option value="${m.id}">${m.name} (${costLabel})${rec}</option>`;
-                });
+                // Show image-optimized models first, then the rest
+                const optimized = models.filter(m => m.image_optimized);
+                const others = models.filter(m => !m.image_optimized);
+                if (optimized.length > 0) {
+                    modelSelect.innerHTML += '<optgroup label="Recommended for Image Processing">';
+                    optimized.forEach(m => {
+                        const costLabel = m.cost_per_hour === 0
+                            ? 'free'
+                            : `~$${m.cost_per_hour.toFixed(3)}/hr`;
+                        const rec = m.id === recommended ? ' \u2605' : '';
+                        modelSelect.innerHTML += `<option value="${m.id}">${m.name} (${costLabel})${rec}</option>`;
+                    });
+                    modelSelect.innerHTML += '</optgroup>';
+                }
+                if (others.length > 0) {
+                    modelSelect.innerHTML += '<optgroup label="Other Vision Models">';
+                    others.forEach(m => {
+                        const costLabel = m.cost_per_hour === 0
+                            ? 'free'
+                            : `~$${m.cost_per_hour.toFixed(3)}/hr`;
+                        const rec = m.id === recommended ? ' \u2605' : '';
+                        modelSelect.innerHTML += `<option value="${m.id}">${m.name} (${costLabel})${rec}</option>`;
+                    });
+                    modelSelect.innerHTML += '</optgroup>';
+                }
                 if (modelHint) {
                     modelHint.textContent = models.length
-                        ? `${models.length} vision models. \u2605 = recommended. Cost estimated at ~120 images/hr.`
+                        ? `${models.length} vision models (${optimized.length} optimized for images). \u2605 = recommended.`
                         : 'No vision models found';
                 }
             } catch (e) {
@@ -997,12 +1015,12 @@ async function testCloudAI() {
             document.getElementById('cloud-demo-section').style.display = '';
         } else {
             result.textContent = data.error || 'Connection failed';
-            result.style.color = 'var(--danger)';
+            result.style.color = 'var(--error)';
             document.getElementById('cloud-demo-section').style.display = 'none';
         }
     } catch (e) {
         result.textContent = 'Error: ' + e.message;
-        result.style.color = 'var(--danger)';
+        result.style.color = 'var(--error)';
         document.getElementById('cloud-demo-section').style.display = 'none';
     } finally {
         btn.disabled = false;
@@ -1394,7 +1412,7 @@ async function loadBrowse(page) {
         document.getElementById('browse-pagination').innerHTML = '';
         document.getElementById('browse-count').textContent = '';
     } finally {
-        if (loadBtn) { loadBtn.disabled = false; loadBtn.textContent = 'Load from Baserow'; }
+        if (loadBtn) { loadBtn.disabled = false; loadBtn.textContent = 'Refresh'; }
         if (loadingBanner) loadingBanner.style.display = 'none';
     }
 }

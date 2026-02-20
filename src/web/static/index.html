@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Wallpaper Scraper</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-    <link rel="stylesheet" href="/static/css/style.css?v=9">
+    <link rel="stylesheet" href="/static/css/style.css?v=10">
     <!-- iOS web app support -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -355,13 +355,13 @@
 
             <div class="card">
                 <div class="card-title">AI Captioning Provider</div>
-                <p style="font-size:13px;color:var(--text-tertiary);margin-bottom:1rem">Use a cloud AI model (Gemini, Claude, or OpenRouter) for more accurate wallpaper titles, alt text, and tags. When enabled, the cloud model replaces local BLIP captioning. Falls back to BLIP automatically if the API call fails.</p>
+                <p style="font-size:13px;color:var(--text-tertiary);margin-bottom:1rem">Use a cloud AI vision model (Gemini, Claude, or OpenRouter) for more accurate wallpaper titles, alt text, and tags. Cloud models excel at character recognition, franchise identification, and scene description. When enabled, the cloud model replaces local BLIP captioning. Falls back to BLIP automatically if the API call fails. OpenRouter provides access to many vision models — image-processing optimized models are highlighted.</p>
 
                 <div class="settings-option" style="margin-bottom:1rem">
                     <input type="checkbox" id="set-cloud-enabled" style="margin-top:3px" onchange="toggleCloudAIFields()">
                     <div class="settings-option-text">
                         <h4>Enable Cloud AI Captioning</h4>
-                        <p>Use Gemini, Claude, or OpenRouter instead of local BLIP for wallpaper titles, descriptions, and tags</p>
+                        <p>Use Gemini, Claude, or OpenRouter vision models instead of local BLIP for wallpaper titling, alt text, and tagging</p>
                     </div>
                 </div>
 
@@ -688,7 +688,7 @@
                         <option value="-Width">Widest First</option>
                         <option value="-Height">Tallest First</option>
                     </select>
-                    <button class="btn btn-primary btn-sm" onclick="loadBrowse()" id="browse-load-btn">Load</button>
+                    <button class="btn btn-primary btn-sm" onclick="loadBrowse()" id="browse-load-btn">Load from Baserow</button>
                     <button class="btn btn-secondary btn-sm" onclick="retryAllBrowseImages()">Retry Failed</button>
                     <span id="browse-count" class="browse-count-text"></span>
                 </div>
@@ -840,6 +840,6 @@
         </div>
     </div>
 
-    <script src="/static/js/app.js?v=8"></script>
+    <script src="/static/js/app.js?v=9"></script>
 </body>
 </html>

@@ -20,34 +20,39 @@ logger = setup_logging("ai-provider")
 # human-sounding titles, alt text, and tags for wallpapers.
 # Editable from the Settings UI; empty config = use this default.
 DEFAULT_SYSTEM_PROMPT = """\
-You are an expert image analyst and wallpaper curator. Your job is to accurately \
-identify what an image shows — characters, franchises, settings, art styles — and \
-produce a title, description, and tags that a real person would write.
+You are an expert image analyst specializing in wallpaper identification and \
+cataloguing. You excel at recognizing characters, franchises, landmarks, art \
+styles, and visual composition. Your job is to produce accurate, human-sounding \
+titles, descriptions, and tags.
 
 Given an image (and optional webpage context), return a JSON object with exactly \
 three fields:
 
-1. "title" — An accurate, specific title (3-8 words). Title case.
+1. "title" — An accurate, specific, evocative title (3-8 words). Title Case.
 Priority order:
   a) If you recognise a character: use their name + franchise or action. \
 Examples: "Gojo Satoru — Jujutsu Kaisen", "Tanjiro's Water Breathing", \
-"2B Overlooking the Ruins — NieR"
-  b) If it's a known place or landmark: name it. Examples: "Mount Fuji at Dawn", \
-"Tokyo Tower Neon Night"
+"2B Overlooking the Ruins — NieR", "Spider-Man Swinging Through Manhattan"
+  b) If it's a known place or landmark: name it specifically. \
+Examples: "Mount Fuji at Dawn", "Tokyo Tower Neon Night", "Yosemite Half Dome"
   c) If it's a scene or landscape: capture the specific setting and mood. \
 Examples: "Crimson Horizon at Dusk", "Misty Forest Trail", "Neon Rain in Shibuya"
   d) If it's abstract or artistic: describe the visual concept. \
-Examples: "Geometric Fractals in Blue", "Ink Waves"
+Examples: "Geometric Fractals in Blue", "Ink Waves", "Chromatic Swirl"
+  e) If it's nature or animals: be specific about species and setting. \
+Examples: "Red Fox in Winter Snow", "Coral Reef at Twilight"
 
 NEVER use these words in titles: wallpaper, background, image, photo, picture, \
 HD, 4K, free, stock, download, stunning, beautiful, amazing, gorgeous, \
 breathtaking, incredible, awesome, perfect. No superlatives — describe what you \
 see, not how impressed you are.
 
-2. "alt" — One sentence (15-25 words) describing what the image actually shows. \
-Be specific and factual: name characters and their franchise, describe their \
-appearance and pose, mention the setting, dominant colours, lighting, and art \
-style. Do NOT start with "A wallpaper of", "An image of", or "This image shows".
+2. "alt" — One factual sentence (15-25 words) describing what the image shows. \
+Be specific: name characters and their franchise, describe appearance, pose, \
+setting, dominant colours, lighting, and art style. Focus on what makes this \
+image unique and identifiable. Do NOT start with "A wallpaper of", "An image of", \
+or "This image shows". Do NOT use subjective adjectives like "beautiful" or \
+"stunning".
 
 3. "tags" — 10-20 lowercase comma-separated search tags. Include ALL that apply:
   - Character name (full name if known)
@@ -55,10 +60,11 @@ style. Do NOT start with "A wallpaper of", "An image of", or "This image shows".
   - Media type: anime, manga, game, movie, tv, comic, photograph, etc.
   - Art style: anime, digital art, 3d render, pixel art, photograph, illustration, \
 oil painting, watercolour, ai generated, etc.
-  - Dominant colours: red, blue, golden, dark, neon, pastel, etc.
+  - Dominant colours: red, blue, golden, dark, neon, pastel, monochrome, etc.
   - Mood / atmosphere: dramatic, serene, moody, vibrant, melancholic, action, etc.
-  - Setting: urban, forest, ocean, space, classroom, battlefield, etc.
+  - Setting: urban, forest, ocean, space, classroom, battlefield, rooftop, etc.
   - Visible subjects: sword, mecha, cat, sunset, rain, cherry blossoms, etc.
+  - Time of day if visible: dawn, sunset, night, golden hour, blue hour, etc.
   NEVER include: wallpaper, background, hd, 4k, free, stock, download, image, photo.
 
 If webpage context is provided (title, tags from the source page), use it as a \
@@ -420,6 +426,22 @@ def _guess_mime(path: Path) -> str:
     }.get(ext, "image/jpeg")
 
 
+def _normalize_tags(raw_tags) -> str:
+    """Normalize tags from various formats (string, list, etc.) into comma-separated string."""
+    if isinstance(raw_tags, list):
+        return ", ".join(str(t).strip() for t in raw_tags if str(t).strip())
+    return str(raw_tags).strip()
+
+
+def _extract_fields(data: dict) -> Tuple[str, str, str]:
+    """Extract title, alt, tags from a parsed JSON dict. Handles field name variations."""
+    title = str(data.get("title", "")).strip()
+    # Some models use "description" or "alt_text" instead of "alt"
+    alt = str(data.get("alt", "") or data.get("alt_text", "") or data.get("description", "")).strip()
+    tags = _normalize_tags(data.get("tags", ""))
+    return title, alt, tags
+
+
 def _parse_json_response(text: str) -> Tuple[str, str, str]:
     """Extract title, alt, tags from model response (JSON or freeform)."""
     text = text.strip()
@@ -431,9 +453,7 @@ def _parse_json_response(text: str) -> Tuple[str, str, str]:
 
     try:
         data = json.loads(text)
-        title = str(data.get("title", "")).strip()
-        alt = str(data.get("alt", "")).strip()
-        tags = str(data.get("tags", "")).strip()
+        title, alt, tags = _extract_fields(data)
         if title:
             return title, alt, tags
     except (json.JSONDecodeError, AttributeError):
@@ -444,9 +464,7 @@ def _parse_json_response(text: str) -> Tuple[str, str, str]:
     if json_match:
         try:
             data = json.loads(json_match.group())
-            title = str(data.get("title", "")).strip()
-            alt = str(data.get("alt", "")).strip()
-            tags = str(data.get("tags", "")).strip()
+            title, alt, tags = _extract_fields(data)
             if title:
                 return title, alt, tags
         except (json.JSONDecodeError, AttributeError):
@@ -475,6 +493,24 @@ _REPUTABLE_PROVIDERS = {
     "google", "meta-llama", "anthropic", "openai",
     "mistralai", "qwen", "meta", "deepseek",
 }
+
+# Models known to excel at image analysis, captioning, and visual description.
+# These are prioritised when auto-recommending for wallpaper processing.
+_IMAGE_PROCESSING_PREFERRED = [
+    "google/gemini-2.0-flash-exp:free",
+    "google/gemini-2.0-flash-001",
+    "google/gemini-2.5-flash-preview",
+    "google/gemini-2.5-pro-preview",
+    "anthropic/claude-sonnet-4",
+    "anthropic/claude-haiku-4",
+    "openai/gpt-4o-mini",
+    "openai/gpt-4o",
+    "meta-llama/llama-4-maverick",
+    "meta-llama/llama-4-scout",
+    "qwen/qwen-2.5-vl-72b-instruct",
+    "qwen/qwen-2.5-vl-7b-instruct",
+]
+_IMAGE_PROCESSING_PREFERRED_SET = set(_IMAGE_PROCESSING_PREFERRED)
 
 
 async def _fetch_openrouter_models(api_key: str) -> dict:
@@ -539,18 +575,30 @@ async def _fetch_openrouter_models(api_key: str) -> dict:
             "cost_per_hour": round(cost_per_hour, 4),
             "prompt_price": pricing.get("prompt", "0"),
             "completion_price": pricing.get("completion", "0"),
+            "image_optimized": m["id"] in _IMAGE_PROCESSING_PREFERRED_SET,
         })
 
     # Sort by cost ascending (free models first)
     vision_models.sort(key=lambda x: x["cost_per_hour"])
 
-    # Auto-recommend: cheapest model from a reputable provider
+    # Auto-recommend: prefer a known image-processing model (free or cheap),
+    # then fall back to cheapest reputable-provider model.
     recommended = ""
-    for m in vision_models:
-        provider_slug = m["id"].split("/")[0] if "/" in m["id"] else ""
-        if provider_slug in _REPUTABLE_PROVIDERS:
-            recommended = m["id"]
+
+    # 1. Check preferred image-processing models first (order matters)
+    model_ids = {m["id"] for m in vision_models}
+    for preferred_id in _IMAGE_PROCESSING_PREFERRED:
+        if preferred_id in model_ids:
+            recommended = preferred_id
             break
+
+    # 2. Fall back to cheapest reputable-provider model
+    if not recommended:
+        for m in vision_models:
+            provider_slug = m["id"].split("/")[0] if "/" in m["id"] else ""
+            if provider_slug in _REPUTABLE_PROVIDERS:
+                recommended = m["id"]
+                break
     if not recommended and vision_models:
         recommended = vision_models[0]["id"]
 

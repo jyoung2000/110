@@ -1513,7 +1513,7 @@ class AICaptioner:
 
             return title, alt_text, ", ".join(sorted(all_tags))
         except Exception:
-            return ("Untitled", "A beautiful scene", "")
+            return ("Untitled", "", "")
 
     @property
     def is_available(self) -> bool:
