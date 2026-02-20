@@ -67,6 +67,21 @@ oil painting, watercolour, ai generated, etc.
   - Time of day if visible: dawn, sunset, night, golden hour, blue hour, etc.
   NEVER include: wallpaper, background, hd, 4k, free, stock, download, image, photo.
 
+4. "characters" — Array of recognized characters, people, or celebrities. \
+Each entry is an object with:
+  - "name": Full canonical name (e.g. "Gojo Satoru", "Spider-Man", "LeBron James"). \
+Use the most widely recognised spelling. For anime characters use the common \
+English order (given name first for well-known characters: "Gojo Satoru" not \
+"Satoru Gojo"; "Naruto Uzumaki" not "Uzumaki Naruto").
+  - "franchise": Series, game, movie, or team name (e.g. "Jujutsu Kaisen", \
+"Marvel", "Los Angeles Lakers"). Empty string "" if not applicable (solo celebrity).
+  - "media_type": One of "anime", "game", "movie", "tv", "comic", "cartoon", \
+"celebrity", or "" if uncertain.
+  Only include characters you can CONFIDENTLY identify from visual features. Do NOT \
+guess — if you are unsure, leave the array empty. Webpage context can help confirm \
+identity but do NOT add a character just because the page title mentions a name \
+you cannot verify in the image.
+
 If webpage context is provided (title, tags from the source page), use it as a \
 hint to improve accuracy — it may name the character, series, or subject. But \
 always verify against what you actually see in the image; don't blindly copy \
@@ -121,8 +136,8 @@ class CloudAIProvider:
         model: str = "gemini-2.0-flash",
         scraped_title: str = "",
         scraped_tags: str = "",
-    ) -> Tuple[str, str, str]:
-        """Call Gemini vision API. Returns (title, alt, tags)."""
+    ) -> Tuple[str, str, str, list]:
+        """Call Gemini vision API. Returns (title, alt, tags, characters)."""
         image_bytes = image_path.read_bytes()
         mime = _guess_mime(image_path)
         b64 = base64.standard_b64encode(image_bytes).decode("ascii")
@@ -208,8 +223,8 @@ class CloudAIProvider:
         model: str = "claude-haiku-4-5-20251001",
         scraped_title: str = "",
         scraped_tags: str = "",
-    ) -> Tuple[str, str, str]:
-        """Call Claude vision API. Returns (title, alt, tags)."""
+    ) -> Tuple[str, str, str, list]:
+        """Call Claude vision API. Returns (title, alt, tags, characters)."""
         image_bytes = image_path.read_bytes()
         mime = _guess_mime(image_path)
         b64 = base64.standard_b64encode(image_bytes).decode("ascii")
@@ -293,8 +308,8 @@ class CloudAIProvider:
         model: str = "",
         scraped_title: str = "",
         scraped_tags: str = "",
-    ) -> Tuple[str, str, str]:
-        """Call OpenRouter vision API (OpenAI-compatible). Returns (title, alt, tags)."""
+    ) -> Tuple[str, str, str, list]:
+        """Call OpenRouter vision API (OpenAI-compatible). Returns (title, alt, tags, characters)."""
         # Auto-select model if not specified
         if not model:
             try:
@@ -373,8 +388,8 @@ class CloudAIProvider:
         model: str = "",
         scraped_title: str = "",
         scraped_tags: str = "",
-    ) -> Tuple[str, str, str]:
-        """Route to the correct provider. Returns (title, alt, tags)."""
+    ) -> Tuple[str, str, str, list]:
+        """Route to the correct provider. Returns (title, alt, tags, characters)."""
         if provider == "gemini":
             return await CloudAIProvider.caption_gemini(
                 api_key, image_path,
@@ -433,17 +448,46 @@ def _normalize_tags(raw_tags) -> str:
     return str(raw_tags).strip()
 
 
-def _extract_fields(data: dict) -> Tuple[str, str, str]:
-    """Extract title, alt, tags from a parsed JSON dict. Handles field name variations."""
+def _extract_fields(data: dict) -> Tuple[str, str, str, list]:
+    """Extract title, alt, tags, characters from a parsed JSON dict.
+
+    Handles field name variations.  The ``characters`` list contains dicts
+    with ``name``, ``franchise``, and ``media_type`` keys — populated when
+    the model returns them, empty list otherwise.
+    """
     title = str(data.get("title", "")).strip()
     # Some models use "description" or "alt_text" instead of "alt"
     alt = str(data.get("alt", "") or data.get("alt_text", "") or data.get("description", "")).strip()
     tags = _normalize_tags(data.get("tags", ""))
-    return title, alt, tags
+
+    # Extract structured character data when the model provides it
+    raw_chars = data.get("characters", [])
+    characters = []
+    if isinstance(raw_chars, list):
+        for entry in raw_chars:
+            if isinstance(entry, dict) and entry.get("name", "").strip():
+                characters.append({
+                    "name": str(entry["name"]).strip(),
+                    "franchise": str(entry.get("franchise", "")).strip(),
+                    "media_type": str(entry.get("media_type", "")).strip(),
+                })
+            elif isinstance(entry, str) and entry.strip():
+                # Model returned a simple list of names
+                characters.append({
+                    "name": entry.strip(),
+                    "franchise": "",
+                    "media_type": "",
+                })
+
+    return title, alt, tags, characters
 
 
-def _parse_json_response(text: str) -> Tuple[str, str, str]:
-    """Extract title, alt, tags from model response (JSON or freeform)."""
+def _parse_json_response(text: str) -> Tuple[str, str, str, list]:
+    """Extract title, alt, tags, characters from model response (JSON or freeform).
+
+    Returns (title, alt, tags, characters) where characters is a list of
+    dicts with ``name``, ``franchise``, ``media_type`` keys.
+    """
     text = text.strip()
 
     # Strip markdown code fences if present
@@ -453,9 +497,9 @@ def _parse_json_response(text: str) -> Tuple[str, str, str]:
 
     try:
         data = json.loads(text)
-        title, alt, tags = _extract_fields(data)
+        title, alt, tags, characters = _extract_fields(data)
         if title:
-            return title, alt, tags
+            return title, alt, tags, characters
     except (json.JSONDecodeError, AttributeError):
         pass
 
@@ -464,9 +508,9 @@ def _parse_json_response(text: str) -> Tuple[str, str, str]:
     if json_match:
         try:
             data = json.loads(json_match.group())
-            title, alt, tags = _extract_fields(data)
+            title, alt, tags, characters = _extract_fields(data)
             if title:
-                return title, alt, tags
+                return title, alt, tags, characters
         except (json.JSONDecodeError, AttributeError):
             pass
 
@@ -474,7 +518,7 @@ def _parse_json_response(text: str) -> Tuple[str, str, str]:
     lines = [l.strip() for l in text.split("\n") if l.strip()]
     title = lines[0][:80] if lines else "Untitled"
     alt = lines[1][:200] if len(lines) > 1 else ""
-    return title, alt, ""
+    return title, alt, "", []
 
 
 # --- OpenRouter model discovery ----------------------------------------------

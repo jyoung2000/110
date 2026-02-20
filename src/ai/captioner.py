@@ -674,6 +674,94 @@ class AICaptioner:
             except Exception as e:
                 logger.debug(f"CLIP verify failed for {char_name}: {e}")
 
+    def _discover_from_cloud_ai(
+        self, cloud_chars: list, image_path: Path, context: dict,
+    ):
+        """Record characters identified by the cloud AI into the character store.
+
+        Cloud AI (Gemini / Claude / OpenRouter) is far more accurate at
+        recognising characters, franchises, and media types than metadata
+        regex heuristics.  Each entry returned by the model is recorded as
+        an auto-discovery so it appears in the Characters tab for user
+        confirmation.
+
+        Also enriches the *context* dict so the local pipeline (titles,
+        tags, alt text) benefits from the cloud AI's identification even
+        when the metadata lacked character information.
+        """
+        from src.storage.character_store import character_store
+
+        for char in cloud_chars:
+            name = char.get("name", "").strip()
+            if not name:
+                continue
+            franchise = char.get("franchise", "").strip()
+            media_type = char.get("media_type", "").strip()
+
+            # Build a CLIP description for future local recognition
+            clip_parts = [name]
+            if franchise:
+                clip_parts.append(f"from {franchise}")
+            if media_type == "anime":
+                clip_parts.append("anime character")
+            elif media_type == "game":
+                clip_parts.append("video game character")
+            elif media_type in ("movie", "tv"):
+                clip_parts.append("character")
+            elif media_type == "comic":
+                clip_parts.append("superhero comic character")
+            elif media_type == "cartoon":
+                clip_parts.append("cartoon character")
+            elif media_type == "celebrity":
+                clip_parts.append("celebrity")
+            clip_desc = ", ".join(clip_parts)
+
+            # Check if this character already exists in the store
+            existing = character_store.search(name)
+            already_known = any(
+                e["name"].lower() == name.lower() for e in existing
+            )
+
+            if already_known:
+                # Bump discovery count and update franchise if the cloud AI
+                # provided one and the existing entry lacks it
+                for e in existing:
+                    if e["name"].lower() == name.lower():
+                        character_store.discover(
+                            name=e["name"],
+                            franchise=franchise or e.get("franchise", ""),
+                        )
+                        # Fix franchise if the stored one is wrong/empty
+                        if franchise and not e.get("franchise"):
+                            entry_obj = character_store._find_by_id(e["id"])
+                            if entry_obj and entry_obj.source != "builtin":
+                                entry_obj.franchise = franchise
+                                if media_type:
+                                    entry_obj.media_type = media_type
+                                if clip_desc:
+                                    entry_obj.clip_description = clip_desc
+                        break
+            else:
+                # New character — record as cloud-verified discovery
+                character_store.discover(
+                    name=name,
+                    franchise=franchise,
+                    media_type=media_type,
+                    clip_description=clip_desc,
+                )
+                logger.info(
+                    f"Cloud AI discovered character: {name}"
+                    + (f" ({franchise})" if franchise else "")
+                )
+
+            # Enrich the context so tag/title generation benefits
+            if name not in context["characters"]:
+                context["characters"].append(name)
+            if franchise and not context["media_name"]:
+                context["media_name"] = franchise
+            if media_type and not context["media_type"]:
+                context["media_type"] = media_type
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -711,10 +799,20 @@ class AICaptioner:
             except Exception as e:
                 logger.warning(f"CLIP recognition failed: {e}")
 
-        # 2b. Auto-discover characters from metadata that aren't in the
-        #     dictionary yet.  Uses CLIP to verify the image actually
-        #     depicts the named character before recording the discovery.
-        if context["characters"] and self._clip_model is not None:
+        # 3. Check if cloud AI is available — it's far more accurate for
+        #    character identification than metadata heuristics + CLIP.
+        cloud_cfg = config_store.get_section("ai")
+        use_cloud = (
+            cloud_cfg.get("cloud_enabled")
+            and cloud_cfg.get("cloud_provider")
+            and cloud_cfg.get("cloud_api_key")
+        )
+
+        # 2b. Auto-discover characters from metadata — only when cloud AI
+        #     is NOT available.  When cloud AI is enabled, it returns a
+        #     structured characters list that's much more accurate than
+        #     metadata regex + CLIP heuristics.
+        if not use_cloud and context["characters"] and self._clip_model is not None:
             try:
                 await asyncio.get_event_loop().run_in_executor(
                     None,
@@ -725,18 +823,10 @@ class AICaptioner:
             except Exception:
                 pass  # discovery is best-effort
 
-        # 3. Try cloud AI provider first (Gemini / Claude) if enabled
-        cloud_cfg = config_store.get_section("ai")
-        use_cloud = (
-            cloud_cfg.get("cloud_enabled")
-            and cloud_cfg.get("cloud_provider")
-            and cloud_cfg.get("cloud_api_key")
-        )
-
         if use_cloud:
             try:
                 from src.ai.provider import cloud_ai
-                cloud_title, cloud_alt, cloud_tags = await cloud_ai.caption(
+                cloud_title, cloud_alt, cloud_tags, cloud_chars = await cloud_ai.caption(
                     provider=cloud_cfg["cloud_provider"],
                     api_key=cloud_cfg["cloud_api_key"],
                     image_path=image_path,
@@ -749,6 +839,15 @@ class AICaptioner:
                     cloud_title, cloud_alt, cloud_tags = self._filter_cloud_result(
                         cloud_title, cloud_alt, cloud_tags,
                     )
+
+                    # Use cloud AI's character identification for discovery.
+                    # Cloud AI is far more accurate at identifying characters
+                    # and their franchises than metadata regex heuristics.
+                    if cloud_chars:
+                        self._discover_from_cloud_ai(
+                            cloud_chars, image_path, context,
+                        )
+
                     logger.info(
                         f"Cloud AI ({cloud_cfg['cloud_provider']}) captioned: "
                         f"{cloud_title[:50]}"
@@ -842,8 +941,39 @@ class AICaptioner:
 
         return context
 
+    # Words that appear in wallpaper titles but are NOT character names.
+    # Prevents "Golden Sunset" or "Dark Forest" from being treated as characters.
+    _SCENE_WORDS = frozenset({
+        "sunset", "sunrise", "dawn", "dusk", "night", "day", "morning",
+        "evening", "twilight", "midnight", "noon", "afternoon",
+        "forest", "mountain", "ocean", "sea", "river", "lake", "sky",
+        "city", "street", "road", "bridge", "tower", "castle", "temple",
+        "beach", "island", "desert", "valley", "field", "garden",
+        "space", "galaxy", "star", "stars", "moon", "sun", "earth",
+        "rain", "snow", "storm", "cloud", "clouds", "fog", "mist",
+        "dark", "light", "neon", "golden", "crimson", "blue", "red",
+        "green", "black", "white", "purple", "silver", "pink",
+        "nature", "landscape", "scenery", "horizon", "view", "panorama",
+        "abstract", "pattern", "geometric", "fractal", "minimal",
+        "aesthetic", "artistic", "fantasy", "futuristic", "cyberpunk",
+        "retro", "vintage", "modern", "classic", "ultra", "super",
+        "digital", "neon", "glow", "fire", "water", "ice", "crystal",
+        "flower", "flowers", "cherry", "blossom", "blossoms", "tree",
+        "trees", "leaves", "autumn", "winter", "spring", "summer",
+        "car", "cars", "vehicle", "motorcycle", "plane", "train",
+        "animal", "animals", "cat", "dog", "wolf", "lion", "eagle",
+        "dragon", "phoenix", "tiger", "bear", "fox", "deer", "horse",
+        "wallpapers", "wide", "widescreen",
+    })
+
     def _extract_names_from_title(self, title: str, context: dict):
-        """Try to pull character and series names from scraped title text."""
+        """Try to pull character and series names from scraped title text.
+
+        Conservative heuristic: only extracts names from clear patterns
+        like "Character - Series" or "Character from Series".  Avoids
+        false positives by checking against known scene/descriptor words
+        and requiring the name to look like a proper noun phrase.
+        """
         cleaned = self._clean_metadata_text(title)
         if not cleaned:
             return
@@ -853,7 +983,11 @@ class AICaptioner:
         if len(parts) == 2:
             char_part = parts[0].strip()
             series_part = parts[1].strip()
-            if char_part and not JUNK_PATTERN.search(char_part):
+            if (
+                char_part
+                and not JUNK_PATTERN.search(char_part)
+                and not self._looks_like_scene_text(char_part)
+            ):
                 context["characters"].append(char_part)
             if series_part and not JUNK_PATTERN.search(series_part):
                 context["media_name"] = series_part
@@ -864,19 +998,41 @@ class AICaptioner:
         if m:
             char = m.group(1).strip()
             series = m.group(2).strip()
-            if char and not JUNK_PATTERN.search(char):
+            if (
+                char
+                and not JUNK_PATTERN.search(char)
+                and not self._looks_like_scene_text(char)
+            ):
                 context["characters"].append(char)
             if series and not JUNK_PATTERN.search(series):
                 context["media_name"] = series
             return
 
-        # No separator — if the title looks like a proper noun phrase
-        # (multiple capitalised words, not generic), treat it as a subject
+        # No separator — only treat as a character if it looks like a
+        # proper noun phrase (all content words capitalised, 2-4 words,
+        # no common scene/descriptor words).  This is intentionally
+        # conservative to reduce false positives — cloud AI is the
+        # primary character identifier when available.
         words = cleaned.split()
-        cap_words = [w for w in words if w[0:1].isupper()]
-        if len(cap_words) >= 2 and len(words) <= 5:
-            # Likely a character or subject name
-            context["characters"].append(cleaned)
+        if len(words) > 4 or len(words) < 2:
+            return
+        content_words = [w for w in words if w.lower() not in _TITLE_MINOR_WORDS]
+        if not content_words:
+            return
+        # All content words must be capitalised (proper noun pattern)
+        if not all(w[0:1].isupper() for w in content_words):
+            return
+        # Reject if any word is a common scene/descriptor term
+        if any(w.lower() in self._SCENE_WORDS for w in words):
+            return
+        context["characters"].append(cleaned)
+
+    def _looks_like_scene_text(self, text: str) -> bool:
+        """Check if text describes a scene rather than a character name."""
+        words = text.lower().split()
+        scene_count = sum(1 for w in words if w in self._SCENE_WORDS)
+        # If more than half the words are scene descriptors, it's not a name
+        return scene_count > len(words) / 2
 
     # ------------------------------------------------------------------
     # BLIP caption generation (context-aware)
