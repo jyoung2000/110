@@ -509,6 +509,9 @@ class ScraperEngine:
 
         consecutive_failures = 0
         base_delay = max(config_store.get("scraping", "page_delay_seconds", default=2), 1.0)
+        # Track visited detail URLs so re-classified listing pages don't
+        # re-queue pages we've already visited
+        seen_detail_urls = {dl["url"] for dl in links_to_visit}
 
         for i, link_info in enumerate(links_to_visit):
             # --- Stop check ---
@@ -517,6 +520,7 @@ class ScraperEngine:
                 break
 
             detail_url = link_info["url"]
+            seen_detail_urls.add(detail_url)
             try:
                 logger.info(f"Visiting detail page {i+1}/{len(links_to_visit)}: {detail_url}")
                 html = await browser_manager.get_page_content(
@@ -610,6 +614,31 @@ class ScraperEngine:
                     if profile:
                         profile.update_hints(has_download_buttons=True)
                 else:
+                    # No images found — use content-based classification to
+                    # check whether this "detail page" is actually a listing.
+                    page_type = adapter.classify_page(html, detail_url)
+                    if page_type == "listing":
+                        # This is really a gallery/listing — extract its detail
+                        # links and queue them for processing (instead of failing).
+                        sub_links = adapter.get_detail_page_links(html, detail_url)
+                        if sub_links:
+                            fresh_sub = [
+                                sl for sl in sub_links
+                                if sl["url"] not in seen_detail_urls
+                                and (not profile or not profile.is_visited(sl["url"]))
+                            ]
+                            if fresh_sub:
+                                logger.info(
+                                    f"Re-classified {detail_url} as listing page — "
+                                    f"found {len(fresh_sub)} detail links to follow"
+                                )
+                                # Insert new links at current position so they're
+                                # visited next (depth-first into the real detail pages)
+                                remaining = links_to_visit[i + 1:]
+                                links_to_visit[i + 1:] = fresh_sub[:15] + remaining
+                                consecutive_failures = 0
+                                continue
+
                     consecutive_failures += 1
                     logger.debug(f"No images found on detail page {detail_url} ({consecutive_failures} in a row)")
                     if consecutive_failures >= 5:

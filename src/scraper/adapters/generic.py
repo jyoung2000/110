@@ -192,6 +192,119 @@ class GenericAdapter(BaseAdapter):
         self.min_width = min_width
         self.min_height = min_height
 
+    # ------------------------------------------------------------------
+    # Content-based page classification
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def classify_page(html: str, page_url: str = "") -> str:
+        """Classify a page as 'listing' or 'detail' based on its content.
+
+        Uses structural heuristics — not URL patterns — to decide whether
+        a page is a gallery/listing (many thumbnails in a grid) or a
+        wallpaper detail page (one main image + download options).
+
+        Returns 'listing', 'detail', or 'unknown'.
+        """
+        soup = BeautifulSoup(html, "lxml")
+
+        # --- Collect signals ---
+        score = 0  # positive = listing, negative = detail
+
+        # 1. Count images and image-wrapping links
+        all_imgs = soup.find_all("img")
+        total_imgs = len(all_imgs)
+
+        # Count images wrapped in <a> tags (thumbnail → detail pattern)
+        thumb_linked = 0
+        for img in all_imgs:
+            parent = img.parent
+            if parent and parent.name == "a":
+                thumb_linked += 1
+            elif parent:
+                grandparent = getattr(parent, "parent", None)
+                if grandparent and grandparent.name == "a":
+                    thumb_linked += 1
+
+        # Many thumbnail-linked images strongly indicate a listing page
+        if thumb_linked >= 10:
+            score += 40
+        elif thumb_linked >= 5:
+            score += 20
+        elif thumb_linked <= 1:
+            score -= 15
+
+        # 2. Grid / card / gallery CSS patterns
+        grid_classes = soup.find_all(
+            class_=re.compile(
+                r"grid|gallery|thumbs|thumb-list|wall-list|card-list|"
+                r"image-list|photo-list|wallpapers|tiles|mosaic",
+                re.I,
+            )
+        )
+        if grid_classes:
+            score += 25
+
+        # 3. Repeating item containers (li.wall, div.thumb, etc.)
+        item_selectors = [
+            "li.wall", "li.thumb", "div.thumb", "div.card",
+            "div.grid-item", "div.tile", "article.post",
+            "div.wallpaper-item", "div.photo-item", "figure.item",
+        ]
+        for sel in item_selectors:
+            items = soup.select(sel)
+            if len(items) >= 4:
+                score += 30
+                break
+
+        # 4. Download buttons / resolution selectors (strong detail signal)
+        download_links = []
+        for sel in DOWNLOAD_SELECTORS:
+            try:
+                download_links.extend(soup.select(sel))
+            except Exception:
+                pass
+        if len(download_links) >= 2:
+            score -= 35  # Multiple download/resolution options = detail page
+        elif len(download_links) == 1:
+            score -= 15
+
+        # 5. Detail-page-specific image selectors
+        for sel in DETAIL_IMAGE_SELECTORS:
+            try:
+                if soup.select(sel):
+                    score -= 30
+                    break
+            except Exception:
+                pass
+
+        # 6. Pagination (strong listing signal)
+        pagination_patterns = [
+            "a[class*='next']", "a[rel='next']", "li.next",
+            ".pagination", ".pager", "nav.pages",
+            "a[class*='page']",
+        ]
+        for sel in pagination_patterns:
+            try:
+                if soup.select(sel):
+                    score += 15
+                    break
+            except Exception:
+                pass
+
+        # 7. Image count as a tiebreaker
+        if total_imgs > 20:
+            score += 10
+        elif total_imgs <= 5:
+            score -= 10
+
+        # --- Decide ---
+        if score >= 15:
+            return "listing"
+        elif score <= -15:
+            return "detail"
+        return "unknown"
+
     async def scrape(self, html: str, page_url: str) -> list[ScrapedImage]:
         """Parse HTML and find wallpaper-quality images.
 
@@ -660,12 +773,25 @@ class GenericAdapter(BaseAdapter):
         Uses TWO approaches:
         1. Links containing/near an <img> tag (thumbnail → detail page)
         2. Links with URL patterns that suggest detail pages (/w/xxx, /wallpaper-, etc.)
+
+        Filters out links inside navigation/sidebar/footer sections to avoid
+        following category or utility links.
         """
         soup = BeautifulSoup(html, "lxml")
         links = []
         seen = set()
         page_parsed = urlparse(page_url)
         page_root = self._root_domain(page_parsed.netloc)
+
+        # Identify navigation/sidebar/footer regions to deprioritise links
+        # found there.  Links inside these are likely category or utility
+        # links, not wallpaper detail links.
+        _nav_containers = set()
+        for sel in ("nav", "header", "footer", ".sidebar", ".side-panel",
+                     ".left-panel", ".right-panel", "[role='navigation']",
+                     ".menu", ".nav", ".footer", ".header"):
+            for el in soup.select(sel):
+                _nav_containers.add(id(el))
 
         for link in soup.find_all("a", href=True):
             href = link.get("href", "")
@@ -744,6 +870,17 @@ class GenericAdapter(BaseAdapter):
 
             if not has_img and not has_detail_pattern:
                 continue
+
+            # Links without thumbnails that live inside nav/sidebar/footer
+            # are almost certainly category or utility links — skip them.
+            if not has_img and _nav_containers:
+                in_nav = False
+                for ancestor in link.parents:
+                    if id(ancestor) in _nav_containers:
+                        in_nav = True
+                        break
+                if in_nav:
+                    continue
 
             seen.add(abs_url)
             links.append({
